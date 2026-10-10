@@ -102,6 +102,9 @@ def check_pinch_active(hand_landmarks):
         
     return True
 
+import os
+import json
+
 def get_hand_size(hand_landmarks):
     """Calculate an approximate bounding box area for the hand to determine proximity."""
     x_coords = [lm.x for lm in hand_landmarks]
@@ -109,6 +112,20 @@ def get_hand_size(hand_landmarks):
     return (max(x_coords) - min(x_coords)) * (max(y_coords) - min(y_coords))
 
 def main():
+    # Load Settings from config.json (managed by launcher)
+    config = {
+        "camera_index": 0,
+        "show_camera_feed": True,
+        "shoulder_guard": True,
+        "typing_lockout": True
+    }
+    if os.path.exists("config.json"):
+        try:
+            with open("config.json", "r") as f:
+                config.update(json.load(f))
+        except Exception as e:
+            print(f"Failed to load config: {e}")
+
     # Setup HandLandmarker using the new Tasks API
     base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
     options = vision.HandLandmarkerOptions(
@@ -131,7 +148,7 @@ def main():
         min_suppression_threshold=0.5)
     face_detector = vision.FaceDetector.create_from_options(options_face)
     
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(config['camera_index'])
     # Force higher resolution (720p)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -197,7 +214,11 @@ def main():
         try:
             # Process the frame for hands and faces
             results = detector.detect_for_video(mp_image, timestamp_ms)
-            face_results = face_detector.detect_for_video(mp_image, timestamp_ms)
+            if config.get('shoulder_guard', True):
+                face_results = face_detector.detect_for_video(mp_image, timestamp_ms)
+            else:
+                class EmptyResults: detections = []
+                face_results = EmptyResults()
             
             # --- ShoulderGuard: Face Tracking & Privacy ---
             faces_detected = 0
@@ -239,8 +260,11 @@ def main():
             if privacy_mode:
                 # Draw massive warning and skip all hand gestures
                 cv2.putText(frame, "PRIVACY SHIELD ACTIVE", (w//2 - 250, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 4)
-                cv2.imshow('Aero Vision Engine', frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'): break
+                if config.get('show_camera_feed', True):
+                    cv2.imshow('Aero Vision Engine (Debug)', frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'): break
+                else:
+                    time.sleep(0.03) # Match camera framerate pacing roughly
                 continue # Skip gesture processing
             
             # Draw green circles on the joints for all hands
@@ -322,7 +346,9 @@ def main():
                         jitter_paused = time.time() - jitter_cooldown < 0.5
                         
                         # If the user has typed on the keyboard in the last 2 seconds, pause gestures!
-                        typing_paused = time.time() - last_keypress_time < 2.0
+                        typing_paused = False
+                        if config.get('typing_lockout', True):
+                            typing_paused = time.time() - last_keypress_time < 2.0
                         
                         gestures_paused = jitter_paused or typing_paused
                         
@@ -585,11 +611,14 @@ def main():
             cv2.putText(frame, f'FPS: {int(fps)}', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
     
             # Show the video
-        cv2.imshow('Aero Vision Engine (Debug)', frame)
-
-        # Exit on 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        if config.get('show_camera_feed', True):
+            cv2.imshow('Aero Vision Engine (Debug)', frame)
+    
+            # Exit on 'q'
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        else:
+            time.sleep(0.01)
 
     cap.release()
     cv2.destroyAllWindows()
