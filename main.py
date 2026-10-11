@@ -121,12 +121,19 @@ class FloatingCapsule:
     def _check_queue(self):
         try:
             msg = self.q.get_nowait()
-            self.label.config(text=msg)
-            # Adapt width for text labels (e.g. SLIDE NEXT vs icons)
-            pill_w = max(90, len(msg) * 14 + 30)
+            # If purely 1-2 icon characters, use large font and compact micro-pill
+            if len(msg) <= 2:
+                self.label.config(text=msg, font=("Segoe UI", 24))
+                pill_w = 84
+            else:
+                # Text phrase (e.g. "▶ SLIDE NEXT", "◀ SLIDE PREV")
+                self.label.config(text=msg, font=("Segoe UI Semibold", 13))
+                # Ample width with padding so phrases never truncate
+                pill_w = max(160, len(msg) * 11 + 40)
+
             screen_width = self.root.winfo_screenwidth()
             x = (screen_width // 2) - (pill_w // 2)
-            self.root.geometry(f"{pill_w}x50+{x}+40")
+            self.root.geometry(f"{pill_w}x48+{x}+35")
             self.root.deiconify()
             
             if self.hide_id:

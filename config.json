@@ -1,7 +1,7 @@
 {
     "camera_index": 0,
-    "show_camera_feed": false,
-    "popout_debug_window": false,
+    "show_camera_feed": true,
+    "popout_debug_window": true,
     "shoulder_guard": false,
     "typing_lockout": true,
     "gaze_clutch": true,
