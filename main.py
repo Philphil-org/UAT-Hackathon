@@ -139,17 +139,18 @@ def is_palm_open(hand_landmarks, handedness):
 def is_back_of_hand_open(hand_landmarks, handedness):
     """Check if the hand is in an open pose with the BACK OF THE HAND facing the camera."""
     wrist = hand_landmarks[0]
-    palm_height = get_dist(wrist, hand_landmarks[9])
+    palm_height = get_dist3d(wrist, hand_landmarks[9])
     
-    # 1. Main fingertips must be extended (forgiving threshold for natural curve)
-    for tip in [8, 12, 16, 20]:
-        if get_dist(hand_landmarks[tip], wrist) < palm_height * 1.05:
+    # 1. Main fingertips must be extended.
+    # Measured from knuckles (MCPs) so wrist tilting/dropping doesn't compress distance
+    for tip, mcp in [(8, 5), (12, 9), (16, 13), (20, 17)]:
+        if get_dist3d(hand_landmarks[tip], hand_landmarks[mcp]) < palm_height * 0.45:
             return False
             
-    # 2. Fingers must be somewhat spread
+    # 2. Fingers reasonably spread
     index_tip = hand_landmarks[8]
     pinky_tip = hand_landmarks[20]
-    if get_dist(index_tip, pinky_tip) < palm_height * 0.45:
+    if get_dist3d(index_tip, pinky_tip) < palm_height * 0.35:
         return False
         
     # 3. Ensure BACK of the hand is facing the camera
@@ -267,6 +268,7 @@ def main():
     back_swipe_start_time = 0
     last_track_swipe_time = 0
     back_swipe_locked_out = False
+    swipe_grace_frames = 0
     
     prev_pinch_dist = None
     pinch_start_time = None
@@ -562,7 +564,9 @@ def main():
                         # --- Back-of-Hand Swipe (Next/Prev Track) ---
                         # Open hand with the BACK of the hand facing the camera, swiped Left/Right
                         if is_back_of_hand_open(primary_landmarks, primary_handedness) and not gestures_paused:
-                            wrist = primary_landmarks[0]
+                            swipe_grace_frames = 0
+                            # Use Landmark 9 (Middle MCP / palm center) so wrist flexing/tilting doesn't skew motion
+                            hand_ref = primary_landmarks[9]
                             current_time = time.time()
                             
                             # Auto-unlock cooldown after 1.2s if hand is still held up
@@ -577,21 +581,22 @@ def main():
                                 back_swipe_anchor_y = None
                             else:
                                 if back_swipe_anchor_x is None:
-                                    back_swipe_anchor_x = wrist.x
-                                    back_swipe_anchor_y = wrist.y
+                                    back_swipe_anchor_x = hand_ref.x
+                                    back_swipe_anchor_y = hand_ref.y
                                     back_swipe_start_time = current_time
                                 else:
                                     elapsed = current_time - back_swipe_start_time
-                                    dx = wrist.x - back_swipe_anchor_x
-                                    swipe_threshold = 0.11 # Defined deadzone
+                                    dx = hand_ref.x - back_swipe_anchor_x
+                                    swipe_threshold = 0.09 # Responsive deadzone
                                     
-                                    # --- Visual Guide in Debug Window ---
-                                    anchor_px = (int(back_swipe_anchor_x * w), int(back_swipe_anchor_y * h))
-                                    curr_px = (int(wrist.x * w), int(wrist.y * h))
-                                    left_bound = (int((back_swipe_anchor_x - swipe_threshold) * w), int(back_swipe_anchor_y * h))
-                                    right_bound = (int((back_swipe_anchor_x + swipe_threshold) * w), int(back_swipe_anchor_y * h))
+                                    # --- Visual Guide in Debug Window (Rail glides with hand height) ---
+                                    curr_y = int(hand_ref.y * h)
+                                    anchor_px = (int(back_swipe_anchor_x * w), curr_y)
+                                    curr_px = (int(hand_ref.x * w), curr_y)
+                                    left_bound = (int((back_swipe_anchor_x - swipe_threshold) * w), curr_y)
+                                    right_bound = (int((back_swipe_anchor_x + swipe_threshold) * w), curr_y)
                                     
-                                    # Draw rail and boundary targets
+                                    # Draw level rail and boundary targets
                                     cv2.line(frame, left_bound, right_bound, (80, 80, 80), 2)
                                     cv2.circle(frame, left_bound, 9, (0, 165, 255), -1)   # Orange: Prev
                                     cv2.circle(frame, right_bound, 9, (0, 255, 0), -1)   # Green: Next
@@ -606,7 +611,7 @@ def main():
                                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 215, 255), 2)
                                     
                                     # --- Trigger Gesture on Threshold Cross ---
-                                    if current_time - last_track_swipe_time > 1.0:
+                                    if current_time - last_track_swipe_time > 0.9:
                                         if dx > swipe_threshold: # Swiped Right -> Next Track
                                             capsule.show('⏭', 'next')
                                             try: pyautogui.press('nexttrack')
@@ -625,17 +630,20 @@ def main():
                                             back_swipe_anchor_y = None
                                             
                                     # Anchor Stability:
-                                    # ONLY drift anchor if hand is resting still (idle).
-                                    # If hand is actively moving (abs(dx) >= 0.03), freeze the anchor in place!
-                                    if abs(dx) < 0.03 and elapsed > 0.4:
-                                        back_swipe_anchor_x = wrist.x
-                                        back_swipe_anchor_y = wrist.y
+                                    # Freeze anchor during motion (abs(dx) >= 0.025); drift gently when idle
+                                    if abs(dx) < 0.025 and elapsed > 0.35:
+                                        back_swipe_anchor_x = hand_ref.x
+                                        back_swipe_anchor_y = hand_ref.y
                                         back_swipe_start_time = current_time
                         else:
-                            # Hand pose broken or lowered: reset anchor and release lockout
-                            back_swipe_anchor_x = None
-                            back_swipe_anchor_y = None
-                            back_swipe_locked_out = False
+                            # Grace buffer: don't abort active swipe on a 1-2 frame tracking dip
+                            if back_swipe_anchor_x is not None and swipe_grace_frames < 3:
+                                swipe_grace_frames += 1
+                            else:
+                                back_swipe_anchor_x = None
+                                back_swipe_anchor_y = None
+                                back_swipe_locked_out = False
+                                swipe_grace_frames = 0
                                 
                         # --- Dynamic Volume Control (Pinch Slider) ---
                         # This runs if palm is not active
