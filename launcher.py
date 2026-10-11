@@ -304,8 +304,10 @@ class ZeroTouchWidget(ctk.CTk):
                 ctx_colors = {0: COOL_GRAY, 1: CHAMPAGNE_GOLD, 2: "#2ECC71", 3: SLATE_BLUE}
                 self.context_lbl.configure(text=f"MODE: {ctx_names.get(ctx_code, 'AUTO')}", text_color=ctx_colors.get(ctx_code, COOL_GRAY))
 
-                if gaze_engaged:
-                    self.gaze_pill.configure(text="GAZE: ENGAGED", text_color=CHAMPAGNE_GOLD)
+                if gaze_engaged == 2:
+                    self.gaze_pill.configure(text="FOCUS: OFF (STAGE)", text_color=CHAMPAGNE_GOLD)
+                elif gaze_engaged == 1:
+                    self.gaze_pill.configure(text="GAZE: ENGAGED", text_color="#2ECC71")
                 else:
                     self.gaze_pill.configure(text="GAZE: AWAY", text_color="#E74C3C")
 

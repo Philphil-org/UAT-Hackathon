@@ -511,6 +511,7 @@ def main():
             primary_face_center = None
             max_face_area = 0
             is_gaze_engaged = True
+            stage_active = config.get('stage_mode', False) or (current_context == 'PRESENTATION')
             
             if face_results.detections:
                 faces_detected = len(face_results.detections)
@@ -525,34 +526,31 @@ def main():
                         primary_face_center = (x + fw//2, y + fh//2)
                         
                         # --- Dynamic Distance-Adaptive Engine (Desk vs Stage Mode) ---
-                        # Measure face size relative to screen width:
-                        # Up-close desk: face_ratio ~ 0.22 - 0.35. Distance stage: face_ratio < 0.14
                         face_ratio = fw / float(w)
                         is_far_distance = face_ratio < 0.16
-                        stage_active = config.get('stage_mode', False) or (current_context == 'PRESENTATION') or is_far_distance
+                        if is_far_distance:
+                            stage_active = True
 
-                        # --- Gaze-Clutch™ Head Yaw Telemetry with Smoothing ---
-                        if hasattr(detection, 'keypoints') and len(detection.keypoints) >= 3:
-                            kp = detection.keypoints
-                            r_eye, l_eye, nose = kp[0], kp[1], kp[2]
-                            eye_center_x = (r_eye.x + l_eye.x) / 2.0
-                            eye_dist = abs(l_eye.x - r_eye.x)
-                            
-                            # Distance-adaptive yaw threshold & smoothing
-                            # Up close: 0.32. Far away / Stage mode: expands up to 0.50 with heavier smoothing
-                            yaw_threshold = 0.50 if stage_active else 0.32
-                            smoothing_factor = 0.80 if is_far_distance else 0.65
-
-                            if eye_dist > 0.006:
-                                raw_yaw = abs(nose.x - eye_center_x) / eye_dist
-                                smoothed_yaw = smoothing_factor * smoothed_yaw + (1.0 - smoothing_factor) * raw_yaw
-                                is_gaze_engaged = smoothed_yaw <= yaw_threshold
-                                last_gaze_engaged = is_gaze_engaged
-                            else:
-                                # When eye landmarks are compressed below reliable resolution floor,
-                                # maintain engaged gaze state rather than falsely assuming user looked away
-                                is_gaze_engaged = True
-                                last_gaze_engaged = True
+                        if stage_active:
+                            # User instruction: Turn off focus mode in presenter mode to eliminate false positives at distance
+                            is_gaze_engaged = True
+                            last_gaze_engaged = True
+                        else:
+                            # --- Standard Gaze-Clutch™ Head Yaw Telemetry with Smoothing (Desk Mode) ---
+                            if hasattr(detection, 'keypoints') and len(detection.keypoints) >= 3:
+                                kp = detection.keypoints
+                                r_eye, l_eye, nose = kp[0], kp[1], kp[2]
+                                eye_center_x = (r_eye.x + l_eye.x) / 2.0
+                                eye_dist = abs(l_eye.x - r_eye.x)
+                                
+                                if eye_dist > 0.008:
+                                    raw_yaw = abs(nose.x - eye_center_x) / eye_dist
+                                    smoothed_yaw = 0.65 * smoothed_yaw + 0.35 * raw_yaw
+                                    is_gaze_engaged = smoothed_yaw <= 0.32
+                                    last_gaze_engaged = is_gaze_engaged
+                                else:
+                                    is_gaze_engaged = True
+                                    last_gaze_engaged = True
                                     
                 # Draw facial telemetry
                 for detection in face_results.detections:
@@ -560,19 +558,19 @@ def main():
                     x, y, fw, fh = int(bbox.origin_x), int(bbox.origin_y), int(bbox.width), int(bbox.height)
                     box_color = (0, 215, 255) if is_gaze_engaged else (0, 0, 255)
                     cv2.rectangle(frame, (x, y), (x + fw, y + fh), box_color, 2)
-                    if config.get('gaze_clutch', True):
-                        mode_tag = " [STAGE]" if (config.get('stage_mode', False) or current_context == 'PRESENTATION') else ""
-                        gaze_text = f"GAZE: ENGAGED{mode_tag}" if is_gaze_engaged else f"GAZE: LOOKING AWAY{mode_tag}"
+                    if stage_active:
+                        cv2.putText(frame, "STAGE MODE (FOCUS BYPASS)", (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 215, 255), 2)
+                    elif config.get('gaze_clutch', True):
+                        gaze_text = "GAZE: ENGAGED" if is_gaze_engaged else "GAZE: LOOKING AWAY"
                         cv2.putText(frame, gaze_text, (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 2)
             else:
-                # Face temporarily occluded by hand, dropped frame, or lighting dip
-                if config.get('gaze_clutch', True):
-                    # Distance & Stage Adaptive Grace Cooldown:
-                    # In presentation/stage mode: extend grace cooldown to 3.5s so glancing at slides/audience doesn't drop control.
-                    # At desk: standard 1.8s grace cooldown.
-                    stage_active = config.get('stage_mode', False) or (current_context == 'PRESENTATION')
-                    grace_timeout = 3.5 if stage_active else 1.8
-                    if time.time() - last_face_seen_time < grace_timeout:
+                # Face temporarily occluded by hand, dropped frame, or presenter looking at screen/audience
+                if stage_active:
+                    # In presenter mode, focus mode is turned off—keep gestures active
+                    is_gaze_engaged = True
+                elif config.get('gaze_clutch', True):
+                    # 1.8-second grace cooldown for desk work
+                    if time.time() - last_face_seen_time < 1.8:
                         is_gaze_engaged = last_gaze_engaged
                     else:
                         is_gaze_engaged = False
@@ -696,8 +694,9 @@ def main():
                             activity_paused = time.time() - last_input_activity_time < 1.8
                         
                         # If Gaze-Clutch is enabled and user is looking away, pause gestures!
+                        # (Focus mode is disabled in presenter / stage mode)
                         gaze_paused = False
-                        if config.get('gaze_clutch', True) and not is_gaze_engaged:
+                        if config.get('gaze_clutch', True) and not stage_active and not is_gaze_engaged:
                             gaze_paused = True
                         
                         gestures_paused = jitter_paused or activity_paused or gaze_paused
@@ -1036,23 +1035,25 @@ def main():
                     shm_buf.buf[32:32 + SHM_FRAME_SIZE] = rgb_thumb.tobytes()
                     # Header: [0]=Active(1), [1]=fps, [2]=lum, [3]=low_light(0/1), [4]=gaze(0/1), [5]=context(0:Def, 1:Slides, 2:Meet, 3:Media)
                     ctx_code = 1 if current_context == 'PRESENTATION' else (2 if current_context == 'MEETING' else (3 if current_context == 'MEDIA' else 0))
+                    gaze_code = 2 if stage_active else (1 if is_gaze_engaged else 0)
                     header_bytes = bytearray(32)
                     header_bytes[0] = 1 # feed active
                     header_bytes[1] = min(255, max(0, int(fps)))
                     header_bytes[2] = min(255, max(0, int(avg_luminance)))
                     header_bytes[3] = 1 if low_light_active else 0
-                    header_bytes[4] = 1 if is_gaze_engaged else 0
+                    header_bytes[4] = gaze_code
                     header_bytes[5] = ctx_code
                     shm_buf.buf[:32] = bytes(header_bytes)
                 else:
                     # When debug feed is toggled off, signal inactive so dashboard hides the preview
                     ctx_code = 1 if current_context == 'PRESENTATION' else (2 if current_context == 'MEETING' else (3 if current_context == 'MEDIA' else 0))
+                    gaze_code = 2 if stage_active else (1 if is_gaze_engaged else 0)
                     header_bytes = bytearray(32)
                     header_bytes[0] = 0 # inactive
                     header_bytes[1] = min(255, max(0, int(fps)))
                     header_bytes[2] = min(255, max(0, int(avg_luminance)))
                     header_bytes[3] = 1 if low_light_active else 0
-                    header_bytes[4] = 1 if is_gaze_engaged else 0
+                    header_bytes[4] = gaze_code
                     header_bytes[5] = ctx_code
                     shm_buf.buf[:32] = bytes(header_bytes)
             except Exception:
