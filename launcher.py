@@ -33,8 +33,8 @@ class ZeroTouchWidget(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("ZeroTouch")
-        self.geometry("350x640")
-        self.minsize(320, 600)
+        self.geometry("350x700")
+        self.minsize(320, 660)
         self.configure(fg_color=MIDNIGHT_INK)
         self.resizable(False, False)
         
@@ -46,9 +46,11 @@ class ZeroTouchWidget(ctk.CTk):
         self.config = {
             "camera_index": 0,
             "show_camera_feed": True,
-            "shoulder_guard": True,
+            "popout_debug_window": False,
+            "shoulder_guard": False,
             "typing_lockout": True,
-            "gaze_clutch": True
+            "gaze_clutch": True,
+            "shush_mute": False
         }
         self.load_config()
         self.process = None
@@ -93,25 +95,35 @@ class ZeroTouchWidget(ctk.CTk):
         self.card.pack(fill="x", pady=(0, 14), padx=2, ipady=8)
 
         # Switches
-        self.show_cam_var = ctk.BooleanVar(value=self.config["show_camera_feed"])
-        self.sw1 = ctk.CTkSwitch(self.card, text="Camera Preview (Debug)", font=self.font_secondary, text_color=SOFT_WHITE, 
+        self.show_cam_var = ctk.BooleanVar(value=self.config.get("show_camera_feed", True))
+        self.sw1 = ctk.CTkSwitch(self.card, text="Dashboard Video Preview", font=self.font_secondary, text_color=SOFT_WHITE, 
                                  variable=self.show_cam_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
-        self.sw1.pack(pady=(8, 6), padx=16, anchor="w")
+        self.sw1.pack(pady=(8, 5), padx=16, anchor="w")
 
-        self.shoulder_var = ctk.BooleanVar(value=self.config["shoulder_guard"])
+        self.popout_cam_var = ctk.BooleanVar(value=self.config.get("popout_debug_window", False))
+        self.sw_popout = ctk.CTkSwitch(self.card, text="Pop-Out Debug Window (OpenCV)", font=self.font_secondary, text_color=SOFT_WHITE, 
+                                       variable=self.popout_cam_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
+        self.sw_popout.pack(pady=5, padx=16, anchor="w")
+
+        self.shoulder_var = ctk.BooleanVar(value=self.config.get("shoulder_guard", False))
         self.sw2 = ctk.CTkSwitch(self.card, text="ShoulderGuard™ Privacy", font=self.font_secondary, text_color=SOFT_WHITE, 
                                  variable=self.shoulder_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
-        self.sw2.pack(pady=6, padx=16, anchor="w")
+        self.sw2.pack(pady=5, padx=16, anchor="w")
 
-        self.typing_var = ctk.BooleanVar(value=self.config["typing_lockout"])
-        self.sw3 = ctk.CTkSwitch(self.card, text="Smart Typing Lockout", font=self.font_secondary, text_color=SOFT_WHITE, 
+        self.typing_var = ctk.BooleanVar(value=self.config.get("typing_lockout", True))
+        self.sw3 = ctk.CTkSwitch(self.card, text="Smart Activity Lockout (Type/Click)", font=self.font_secondary, text_color=SOFT_WHITE, 
                                  variable=self.typing_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
-        self.sw3.pack(pady=6, padx=16, anchor="w")
+        self.sw3.pack(pady=5, padx=16, anchor="w")
 
         self.gaze_var = ctk.BooleanVar(value=self.config.get("gaze_clutch", True))
         self.sw4 = ctk.CTkSwitch(self.card, text="Gaze-Clutch™ (Look-to-Control)", font=self.font_secondary, text_color=SOFT_WHITE, 
                                  variable=self.gaze_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
-        self.sw4.pack(pady=6, padx=16, anchor="w")
+        self.sw4.pack(pady=5, padx=16, anchor="w")
+
+        self.shush_var = ctk.BooleanVar(value=self.config.get("shush_mute", False))
+        self.sw5 = ctk.CTkSwitch(self.card, text="Ghost-Mute (Shh Gesture)", font=self.font_secondary, text_color=SOFT_WHITE, 
+                                 variable=self.shush_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
+        self.sw5.pack(pady=5, padx=16, anchor="w")
 
         # Live Vision Preview & Telemetry Subpanel (Embedded Dashboard Feed)
         self.preview_frame = ctk.CTkFrame(self.card, fg_color="#121218", corner_radius=8, border_width=1, border_color="#2A2A38")
@@ -200,9 +212,11 @@ class ZeroTouchWidget(ctk.CTk):
         except Exception:
             self.config["camera_index"] = 0
         self.config["show_camera_feed"] = self.show_cam_var.get()
+        self.config["popout_debug_window"] = self.popout_cam_var.get()
         self.config["shoulder_guard"] = self.shoulder_var.get()
         self.config["typing_lockout"] = self.typing_var.get()
         self.config["gaze_clutch"] = self.gaze_var.get()
+        self.config["shush_mute"] = self.shush_var.get()
         
         try:
             with open(CONFIG_FILE, "w") as f:

@@ -223,8 +223,11 @@ def main():
     config = {
         "camera_index": 0,
         "show_camera_feed": True,
-        "shoulder_guard": True,
-        "typing_lockout": True
+        "popout_debug_window": False,
+        "shoulder_guard": False,
+        "typing_lockout": True,
+        "gaze_clutch": True,
+        "shush_mute": False
     }
     if os.path.exists("config.json"):
         try:
@@ -318,7 +321,7 @@ def main():
     
     last_config_check_time = 0
     last_config_mtime = 0
-    prev_show_camera = config.get('show_camera_feed', True)
+    prev_popout_window = config.get('popout_debug_window', False)
     
     smoothed_yaw = 0.0
     last_gaze_engaged = True
@@ -336,12 +339,12 @@ def main():
                         with open("config.json", "r") as f:
                             config.update(json.load(f))
                         
-                        # Live toggle camera debug window
-                        cur_show = config.get('show_camera_feed', True)
-                        if prev_show_camera and not cur_show:
+                        # Live toggle camera debug popout window
+                        cur_popout = config.get('popout_debug_window', False)
+                        if prev_popout_window and not cur_popout:
                             cv2.destroyAllWindows()
                             cv2.waitKey(1)
-                        prev_show_camera = cur_show
+                        prev_popout_window = cur_popout
                 except Exception:
                     pass
 
@@ -461,7 +464,7 @@ def main():
             if privacy_mode:
                 # Draw massive warning and skip all hand gestures
                 cv2.putText(frame, "PRIVACY SHIELD ACTIVE", (w//2 - 250, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 4)
-                if config.get('show_camera_feed', True):
+                if config.get('popout_debug_window', False):
                     cv2.imshow('Aero Vision Engine (Debug)', frame)
                     if cv2.waitKey(1) & 0xFF == ord('q'): break
                 else:
@@ -621,24 +624,23 @@ def main():
                             palm_start_time = None
                             
                         # --- "Shush" Instant Mute (Boss Key) ---
-                        # If the index finger is extended and placed over the mouth area
-                        if primary_face_center is not None and not gestures_paused:
+                        # Requires deliberate gesture: enabled in config, index finger at mouth, held steady for 0.5s
+                        if config.get('shush_mute', False) and primary_face_center is not None and not gestures_paused:
                             index_tip = primary_landmarks[8]
                             index_px = (int(index_tip.x * w), int(index_tip.y * h))
                             dist_to_face = ((index_px[0] - primary_face_center[0])**2 + (index_px[1] - primary_face_center[1])**2)**0.5
                             
-                            # The face_width is approx max_face_area**0.5
                             face_width = max_face_area**0.5
                             
-                            # If index finger is very close to the center of the face (nose/mouth)
-                            if dist_to_face < face_width * 0.7:
-                                # Ensure it's a shush (index extended, middle curled)
+                            # Tightened proximity requirement: strictly near mouth/nose (0.45x face width)
+                            if dist_to_face < face_width * 0.45:
                                 middle_dist = get_dist(primary_landmarks[12], primary_landmarks[0])
                                 index_dist = get_dist(primary_landmarks[8], primary_landmarks[0])
                                 
-                                if index_dist > palm_height * 1.3 and middle_dist < palm_height * 1.1:
-                                    cv2.circle(frame, index_px, 20, (0, 0, 255), -1) # Red indicator for mute
-                                    if time.time() - last_shush_time > 1.5:
+                                # Index extended, all other fingers tucked
+                                if index_dist > palm_height * 1.3 and middle_dist < palm_height * 1.05 and is_still:
+                                    cv2.circle(frame, index_px, 15, (0, 0, 255), -1) # Red indicator for mute
+                                    if time.time() - last_shush_time > 2.0:
                                         capsule.show('🔇', 'shush')
                                         try: pyautogui.press('volumemute')
                                         except: pass
@@ -648,6 +650,8 @@ def main():
                                     shush_active = False
                             else:
                                 shush_active = False
+                        else:
+                            shush_active = False
     
                         # --- Back-of-Hand Swipe (Next/Prev Track) ---
                         # Open hand with the BACK of the hand facing the camera, swiped Left/Right
@@ -883,11 +887,9 @@ def main():
             except Exception:
                 pass
 
-        # Standalone OpenCV debug window (only if enabled)
-        if config.get('show_camera_feed', True):
+        # Standalone OpenCV debug window (only if popout window explicitly enabled)
+        if config.get('popout_debug_window', False):
             cv2.imshow('Aero Vision Engine (Debug)', frame)
-    
-            # Exit on 'q'
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         else:
