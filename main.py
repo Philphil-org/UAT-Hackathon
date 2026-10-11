@@ -292,6 +292,10 @@ def main():
     last_config_check_time = 0
     last_config_mtime = 0
     prev_show_camera = config.get('show_camera_feed', True)
+    
+    smoothed_yaw = 0.0
+    last_gaze_engaged = True
+    last_face_seen_time = 0
 
     while True:
         # Live config reload (responds instantly to toggles in launcher)
@@ -366,6 +370,7 @@ def main():
             
             if face_results.detections:
                 faces_detected = len(face_results.detections)
+                last_face_seen_time = time.time()
                 for detection in face_results.detections:
                     bbox = detection.bounding_box
                     x, y, fw, fh = int(bbox.origin_x), int(bbox.origin_y), int(bbox.width), int(bbox.height)
@@ -375,17 +380,18 @@ def main():
                         max_face_area = area
                         primary_face_center = (x + fw//2, y + fh//2)
                         
-                        # --- Gaze-Clutch™ Head Yaw Telemetry ---
+                        # --- Gaze-Clutch™ Head Yaw Telemetry with Smoothing ---
                         if hasattr(detection, 'keypoints') and len(detection.keypoints) >= 3:
                             kp = detection.keypoints
                             r_eye, l_eye, nose = kp[0], kp[1], kp[2]
                             eye_center_x = (r_eye.x + l_eye.x) / 2.0
                             eye_dist = abs(l_eye.x - r_eye.x)
                             if eye_dist > 0.01:
-                                yaw_ratio = abs(nose.x - eye_center_x) / eye_dist
-                                # If turned more than ~22 degrees away from screen
-                                if yaw_ratio > 0.32:
-                                    is_gaze_engaged = False
+                                raw_yaw = abs(nose.x - eye_center_x) / eye_dist
+                                # Smooth with Exponential Moving Average to prevent hand clipping spikes
+                                smoothed_yaw = 0.65 * smoothed_yaw + 0.35 * raw_yaw
+                                is_gaze_engaged = smoothed_yaw <= 0.28
+                                last_gaze_engaged = is_gaze_engaged
                                     
                 # Draw facial telemetry
                 for detection in face_results.detections:
@@ -396,6 +402,14 @@ def main():
                     if config.get('gaze_clutch', True):
                         gaze_text = "GAZE: ENGAGED" if is_gaze_engaged else "GAZE: LOOKING AWAY"
                         cv2.putText(frame, gaze_text, (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 2)
+            else:
+                # Face occluded by hand or off-screen
+                if config.get('gaze_clutch', True):
+                    # If face missing for >0.25s, cannot verify gaze -> keep gestures paused!
+                    if time.time() - last_face_seen_time > 0.25:
+                        is_gaze_engaged = False
+                    else:
+                        is_gaze_engaged = last_gaze_engaged
                         
             # Privacy Mode Trigger (Shoulder Surfer)
             if config.get('shoulder_guard', True) and faces_detected > 1:
