@@ -53,7 +53,7 @@ class ZeroTouchWidget(ctk.CTk):
             "stage_mode": False
         }
         self.load_config()
-        self.geometry("350x740" if self.config.get("show_camera_feed", True) else "350x570")
+        self.geometry("350x770" if self.config.get("show_camera_feed", True) else "350x600")
         self.process = None
 
         # Fonts
@@ -167,7 +167,22 @@ class ZeroTouchWidget(ctk.CTk):
             font=self.font_secondary, text_color=SOFT_WHITE,
             command=self.save_config_combo
         )
-        self.cam_combo.pack(pady=(2, 6), padx=16, fill="x")
+        self.cam_combo.pack(pady=(2, 4), padx=16, fill="x")
+
+        # Multi-App Camera Sharing Setup Button & Instructions
+        self.cam_share_btn = ctk.CTkButton(
+            self.card, text="⚙ Camera Sharing Setup (Meet / Zoom)", font=self.font_telemetry,
+            fg_color="transparent", border_width=1, border_color="#3A3A4D",
+            hover_color="#22222C", text_color=CHAMPAGNE_GOLD, height=24,
+            command=lambda: os.system("start ms-settings:camera")
+        )
+        self.cam_share_btn.pack(pady=(2, 2), padx=16, fill="x")
+
+        self.cam_share_hint = ctk.CTkLabel(
+            self.card, text="💡 Tip: Click your camera above, then switch ON:\n'Allow multiple apps to use camera at the same time'",
+            font=ctk.CTkFont(family="Segoe UI", size=9), text_color=COOL_GRAY, justify="center"
+        )
+        self.cam_share_hint.pack(pady=(0, 6), padx=12, fill="x")
 
         # Hide to Tray Button
         self.tray_btn = ctk.CTkButton(
@@ -233,11 +248,11 @@ class ZeroTouchWidget(ctk.CTk):
         if self.show_cam_var.get():
             if not self.preview_canvas.winfo_ismapped():
                 self.preview_canvas.pack(fill="x", padx=6, pady=(0, 6))
-                self.geometry("350x740")
+                self.geometry("350x770")
         else:
             if self.preview_canvas.winfo_ismapped():
                 self.preview_canvas.pack_forget()
-                self.geometry("350x570")
+                self.geometry("350x600")
 
         try:
             with open(CONFIG_FILE, "w") as f:

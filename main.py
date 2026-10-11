@@ -630,10 +630,13 @@ def main():
                     # --- ShoulderGuard: Body Ownership Lock-On ---
                     # We tie the hand to the primary face to ensure background people can't steal control!
                     owns_hand = True
-                    if primary_face_center is not None:
+                    if primary_face_center is not None and max_face_area > 0:
                         wrist = primary_landmarks[0]
                         wrist_px = (int(wrist.x * w), int(wrist.y * h))
                         face_px = primary_face_center
+                        
+                        dist_to_face = ((wrist_px[0] - face_px[0])**2 + (wrist_px[1] - face_px[1])**2)**0.5
+                        face_width = max_face_area**0.5 # Approximate width
                         
                         # Distance-adaptive arm reach radius:
                         # At desk: 3.5x face width. When far back or on stage: up to 6.0x face width
