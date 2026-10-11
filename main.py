@@ -4,7 +4,7 @@ import time
 import pyautogui
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from pynput import keyboard
+from pynput import keyboard, mouse
 import tkinter as tk
 import threading
 import queue
@@ -71,11 +71,11 @@ class FloatingCapsule:
         except Exception:
             pass
 
-# --- Smart Typing Detection (Background Listener) ---
-last_keypress_time = 0
+# --- Smart Activity Detection (Keyboard & Mouse Listener) ---
+last_input_activity_time = 0
 
 def on_key_press(key):
-    global last_keypress_time
+    global last_input_activity_time
     # Ignore simulated media keys sent by pyautogui so our gestures don't lock us out
     try:
         ignore_keys = [
@@ -87,11 +87,20 @@ def on_key_press(key):
             return
     except Exception:
         pass
-    last_keypress_time = time.time()
+    last_input_activity_time = time.time()
+
+def on_mouse_click(x, y, button, pressed):
+    global last_input_activity_time
+    if pressed:
+        last_input_activity_time = time.time()
 
 keyboard_listener = keyboard.Listener(on_press=on_key_press)
 keyboard_listener.daemon = True
 keyboard_listener.start()
+
+mouse_listener = mouse.Listener(on_click=on_mouse_click)
+mouse_listener.daemon = True
+mouse_listener.start()
 
 # Disable pyautogui's default 0.1s delay so volume sliding is instantly responsive
 pyautogui.PAUSE = 0
@@ -198,6 +207,8 @@ def check_pinch_active(hand_landmarks):
 
 import os
 import json
+import numpy as np
+import multiprocessing.shared_memory as shm_module
 
 def get_hand_size(hand_landmarks):
     """Calculate an approximate bounding box area for the hand to determine proximity."""
@@ -244,6 +255,22 @@ def main():
         min_suppression_threshold=0.5)
     face_detector = vision.FaceDetector.create_from_options(options_face)
     
+    # Setup Shared Memory for Dashboard Preview (320x180 RGB)
+    SHM_NAME = "zerotouch_feed_shm"
+    SHM_W, SHM_H = 320, 180
+    SHM_FRAME_SIZE = SHM_W * SHM_H * 3
+    SHM_TOTAL_SIZE = SHM_FRAME_SIZE + 32 # 32 bytes header for metadata
+    shm_buf = None
+    try:
+        try:
+            shm_buf = shm_module.SharedMemory(name=SHM_NAME, create=True, size=SHM_TOTAL_SIZE)
+        except FileExistsError:
+            shm_buf = shm_module.SharedMemory(name=SHM_NAME, create=False, size=SHM_TOTAL_SIZE)
+        # Clear header
+        shm_buf.buf[:32] = b'\x00' * 32
+    except Exception as e:
+        print(f"Shared memory init note: {e}")
+
     cap = cv2.VideoCapture(config['camera_index'])
     # Force higher resolution (720p)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -524,22 +551,22 @@ def main():
                         # If the hand has jittered in the last 0.5 seconds, pause all gesture processing!
                         jitter_paused = time.time() - jitter_cooldown < 0.5
                         
-                        # If the user has typed on the keyboard in the last 2 seconds, pause gestures!
-                        typing_paused = False
+                        # If the user has typed or clicked in the last 1.8 seconds, pause gestures!
+                        activity_paused = False
                         if config.get('typing_lockout', True):
-                            typing_paused = time.time() - last_keypress_time < 2.0
+                            activity_paused = time.time() - last_input_activity_time < 1.8
                         
                         # If Gaze-Clutch is enabled and user is looking away, pause gestures!
                         gaze_paused = False
                         if config.get('gaze_clutch', True) and not is_gaze_engaged:
                             gaze_paused = True
                         
-                        gestures_paused = jitter_paused or typing_paused or gaze_paused
+                        gestures_paused = jitter_paused or activity_paused or gaze_paused
                         
                         if jitter_paused:
                             cv2.putText(frame, "JITTER PAUSE", (wrist_x - 60, wrist_y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
-                        elif typing_paused:
-                            cv2.putText(frame, "TYPING - STANDBY", (wrist_x - 80, wrist_y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 165, 0), 2)
+                        elif activity_paused:
+                            cv2.putText(frame, "SMART PAUSE (TYPING/CLICKING)", (wrist_x - 120, wrist_y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 165, 0), 2)
                         elif gaze_paused:
                             cv2.putText(frame, "GAZE PAUSE (LOOKING AWAY)", (wrist_x - 110, wrist_y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 100, 255), 2)
                             
@@ -829,7 +856,34 @@ def main():
         lum_color = (0, 215, 255) if low_light_active else (180, 180, 180)
         cv2.putText(frame, lum_text, (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.55, lum_color, 2)
     
-            # Show the video
+        # Stream downscaled preview & live telemetry to Dashboard Shared Memory
+        if shm_buf is not None:
+            try:
+                if config.get('show_camera_feed', True):
+                    thumb = cv2.resize(frame, (SHM_W, SHM_H), interpolation=cv2.INTER_NEAREST)
+                    rgb_thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
+                    shm_buf.buf[32:32 + SHM_FRAME_SIZE] = rgb_thumb.tobytes()
+                    # Header: [0]=Active(1), [1]=fps, [2]=lum, [3]=low_light(0/1), [4]=gaze(0/1)
+                    header_bytes = bytearray(32)
+                    header_bytes[0] = 1 # feed active
+                    header_bytes[1] = min(255, max(0, int(fps)))
+                    header_bytes[2] = min(255, max(0, int(avg_luminance)))
+                    header_bytes[3] = 1 if low_light_active else 0
+                    header_bytes[4] = 1 if is_gaze_engaged else 0
+                    shm_buf.buf[:32] = bytes(header_bytes)
+                else:
+                    # When debug feed is toggled off, signal inactive so dashboard hides the preview
+                    header_bytes = bytearray(32)
+                    header_bytes[0] = 0 # inactive
+                    header_bytes[1] = min(255, max(0, int(fps)))
+                    header_bytes[2] = min(255, max(0, int(avg_luminance)))
+                    header_bytes[3] = 1 if low_light_active else 0
+                    header_bytes[4] = 1 if is_gaze_engaged else 0
+                    shm_buf.buf[:32] = bytes(header_bytes)
+            except Exception:
+                pass
+
+        # Standalone OpenCV debug window (only if enabled)
         if config.get('show_camera_feed', True):
             cv2.imshow('Aero Vision Engine (Debug)', frame)
     
@@ -841,6 +895,11 @@ def main():
 
     cap.release()
     cv2.destroyAllWindows()
+    if shm_buf is not None:
+        try:
+            shm_buf.close()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()
