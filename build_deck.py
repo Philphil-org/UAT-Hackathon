@@ -5,13 +5,13 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE
 
-# 16:9 Widescreen Presentation
+# 16:9 Widescreen Presentation (Streamlined 5-Slide 4-Minute Competition Deck)
 prs = Presentation()
 prs.slide_width = Inches(13.333)
 prs.slide_height = Inches(7.5)
-blank_layout = prs.slide_layouts[6] # Blank slide
+blank_layout = prs.slide_layouts[6]
 
-# ZeroTouch Executive Palette
+# ZeroTouch Executive Brand Palette
 C_BG = RGBColor(15, 15, 20)        # Midnight Ink #0F0F14
 C_CARD = RGBColor(24, 24, 32)      # Hard Graphite #181820
 C_GOLD = RGBColor(212, 175, 106)   # Champagne Gold #D4AF6A
@@ -19,7 +19,6 @@ C_GOLD_MUTED = RGBColor(181, 147, 80)
 C_WHITE = RGBColor(242, 239, 233)  # Soft White #F2EFE9
 C_GRAY = RGBColor(138, 141, 147)   # Cool Gray #8A8D93
 C_ACCENT = RGBColor(74, 111, 165)  # Slate Blue #4A6FA5
-C_GREEN = RGBColor(46, 204, 113)   # Feedback Emerald
 
 def create_base_slide():
     slide = prs.slides.add_slide(blank_layout)
@@ -50,43 +49,35 @@ def add_header(slide, title_text, category_text="ZEROTOUCH OS • UAT HACKATHON"
     p_t.font.color.rgb = C_WHITE
     p_t.font.name = 'Georgia'
 
-def add_card(slide, left, top, width, height, title, body_bullets, accent_color=C_GOLD, live_badge=None):
+def add_card(slide, left, top, width, height, title, body_bullets, accent_color=C_GOLD):
     card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
     card.fill.solid()
     card.fill.fore_color.rgb = C_CARD
     card.line.color.rgb = accent_color
     card.line.width = Pt(1)
 
-    pad = Inches(0.25)
+    pad = Inches(0.28)
     tb = slide.shapes.add_textbox(left + pad, top + pad, width - (pad * 2), height - (pad * 2))
     tf = tb.text_frame
     tf.word_wrap = True
     
     p_head = tf.paragraphs[0]
     p_head.text = title
-    p_head.font.size = Pt(18)
+    p_head.font.size = Pt(19)
     p_head.font.bold = True
     p_head.font.color.rgb = accent_color
     p_head.font.name = 'Segoe UI'
 
-    if live_badge:
-        p_badge = tf.add_paragraph()
-        p_badge.text = f"[ LIVE DEMO ACTION: {live_badge} ]"
-        p_badge.font.size = Pt(11)
-        p_badge.font.bold = True
-        p_badge.font.color.rgb = C_GREEN
-        p_badge.font.name = 'Consolas'
-
     for b in body_bullets:
         p = tf.add_paragraph()
         p.text = f"• {b}"
-        p.font.size = Pt(13)
+        p.font.size = Pt(14)
         p.font.color.rgb = C_WHITE
         p.font.name = 'Segoe UI'
-        p.space_before = Pt(6)
+        p.space_before = Pt(8)
 
 # ==========================================
-# SLIDE 1: Title Slide
+# SLIDE 1: Title & Hook (0:00 - 0:30)
 # ==========================================
 s1 = create_base_slide()
 if os.path.exists('zerotouch.png'):
@@ -130,161 +121,105 @@ p4.font.name = 'Segoe UI'
 p4.space_before = Pt(28)
 
 # ==========================================
-# SLIDE 2: The Core Problem & Thesis
+# SLIDE 2: The Core Problem & Our Solution (0:30 - 1:15)
 # ==========================================
 s2 = create_base_slide()
-add_header(s2, "The Spatial Computing Problem: Why Cameras Stay Off", "01 • THE PROBLEM & THESIS")
+add_header(s2, "The Spatial Dilemma: Why Computer Vision Peripherals Fail", "01 • PROBLEM & THESIS")
 add_card(s2, Inches(0.8), Inches(1.9), Inches(5.6), Inches(4.8), 
-         "The Problem with Traditional CV",
-         ["Accidental Triggers: Scratching face, reaching for coffee, or typing fires unintended commands.",
-          "Privacy Paranoia: Users distrust cameras streaming frames into cloud servers or storing them on disk.",
-          "Fatigue & Distance Limits: Standing up or stepping back to present instantly breaks hand tracking.",
-          "Hardware Lockouts: Most CV software locks out Zoom, Teams, or Google Meet from accessing the webcam."],
+         "The Problem: Too Noisy to Leave On",
+         ["Accidental Triggers: Scratching face, typing, or grabbing a cup fires unintended clicks and commands.",
+          "Privacy Paranoia: Users fear cameras streaming frames across networks or logging to disk.",
+          "Distance & Posture Limits: Stepping back to present slides breaks hand tracking or trips false look-aways.",
+          "Hardware Lockouts: Most CV software monopolizes the webcam, preventing Zoom, Teams, or Meet from opening."],
          C_GOLD)
 
 add_card(s2, Inches(6.8), Inches(1.9), Inches(5.7), Inches(4.8),
-         "The ZeroTouch Philosophy",
-         ["The Invisible Peripheral: Stays silent in the background until deliberate intent is mathematically verified.",
-          "100% Volatile RAM: Zero frames stored, zero network requests, zero telemetry leakage.",
-          "Multimodal Intent Verification: Real physical typing detection, body ownership reach bounds, and gaze yaw tracking.",
-          "Native OS Integration: Leverages Windows Camera Frame Server so Zoom, Meet, and ZeroTouch run simultaneously."],
+         "The Solution: The Invisible Peripheral",
+         ["100% Volatile RAM: Zero video frames saved or transmitted; all inference runs strictly in local memory.",
+          "Multimodal Intent Filtering: Physical typing lockout, gaze tracking, and reach boundaries eliminate misfires.",
+          "Stage Mode: Automatic distance adaptation keeps controls responsive at 6–10 feet.",
+          "Native OS Camera Sharing: Windows Camera Frame Server sharing allows simultaneous Google Meet and CV usage."],
          C_WHITE)
 
 # ==========================================
-# SLIDE 3: Context-Aware Intelligence
+# SLIDE 3: Context-Aware Intelligence (1:15 - 2:15)
 # ==========================================
 s3 = create_base_slide()
-add_header(s3, "Context-Aware OS Control: One Engine, Three Modes", "02 • SPATIAL WORKFLOW ENGINE")
+add_header(s3, "Context-Aware Architecture: One Engine, Three Modes", "02 • SPATIAL WORKFLOW")
 add_card(s3, Inches(0.8), Inches(1.9), Inches(3.7), Inches(4.8),
          "Presentation Mode",
-         ["Targets: PowerPoint, Google Slides, Acrobat PDF.",
-          "Back-of-Hand Swipe: Instant Next / Previous Slide advance.",
-          "Open Palm Hold (0.5s): Toggles Blank/Resume presentation screen (B key).",
-          "Stage-Optimized: Gaze lockouts bypassed so presenters can look at slides or audience."],
-         C_GOLD,
-         "Swipe back of hand to advance this slide right now!")
+         ["Targets: PowerPoint, Google Slides, Keynote, PDF.",
+          "Back-of-Hand Swipe: Advance or return slides seamlessly across the room.",
+          "Open Palm Hold (0.5s): Blank/resume screen ('B').",
+          "Stage Optimization: Disengages desk gaze lockouts so presenters can look at audience or slides freely."],
+         C_GOLD)
 
 add_card(s3, Inches(4.8), Inches(1.9), Inches(3.7), Inches(4.8),
          "Video Meeting Mode",
          ["Targets: Google Meet, Zoom, MS Teams, Webex.",
-          "Ghost-Mute (Shh): Index finger to mouth toggles hardware microphone mute directly via Windows Core Audio.",
-          "Palm Hold: Instant video camera toggle (Alt + V).",
-          "Swipe: Toggle participant / gallery views."],
-         C_WHITE,
-         "Place finger on lips to trigger hardware mic mute!")
+          "Ghost-Mute (Shh): Index finger to mouth directly toggles hardware microphone mute via Windows Core Audio.",
+          "Open Palm Hold: Instant camera toggle ('Alt + V').",
+          "Back-of-Hand Swipe: Toggle participant views."],
+         C_WHITE)
 
 add_card(s3, Inches(8.8), Inches(1.9), Inches(3.7), Inches(4.8),
          "Media & Default Mode",
          ["Targets: Spotify, YouTube, Netflix, Desktop.",
-          "Palm Hold: Smooth Media Play/Pause.",
-          "Back-of-Hand Swipe: Next/Prev audio track.",
-          "Dynamic Vertical Pinch: Continuous Master Volume slide with live floating capsule feedback."],
-         C_ACCENT,
-         "Pinch thumb and index finger to slide volume!")
+          "Open Palm Hold: Smooth play/pause toggle.",
+          "Dynamic Vertical Pinch: Continuous master volume control with live capsule HUD updates.",
+          "Back-of-Hand Swipe: Skip or previous track."],
+         C_ACCENT)
 
 # ==========================================
-# SLIDE 4: Computer Vision Defense Architecture
+# SLIDE 4: Multimodal Noise Rejection (2:15 - 3:00)
 # ==========================================
 s4 = create_base_slide()
-add_header(s4, "Noise Rejection: How We Eliminate False Positives", "03 • COMPUTER VISION DEFENSE")
+add_header(s4, "Noise Defense: How We Eliminated False Triggers", "03 • COMPUTER VISION DEFENSE")
 add_card(s4, Inches(0.8), Inches(1.9), Inches(5.6), Inches(2.3),
-         "Smart Activity Lockout (Type and Click)",
-         ["Low-level background hooks (Pynput) detect physical keyboard and mouse activity.",
-          "While typing or resting hands on the keyboard, gestures sleep for 1.8s."],
-         C_GOLD,
-         "Type on keyboard -> Gestures instantly sleep")
+         "Smart Activity Lockout (Type & Click)",
+         ["Background hardware hooks (Pynput) detect keyboard typing and mouse clicks.",
+          "While typing or resting hands above the keyboard, gestures sleep for 1.8s."],
+         C_GOLD)
 
 add_card(s4, Inches(0.8), Inches(4.45), Inches(5.6), Inches(2.3),
          "Gaze-Clutch (Look-to-Control)",
-         ["MediaPipe keypoints track head yaw and pupillary distance in real time.",
-          "Looking away at a second monitor immediately clutches gestures to standby."],
-         C_WHITE,
-         "Turn head away -> HUD shows GAZE: AWAY")
+         ["Real-time 3D head yaw and pupillary distance tracking.",
+          "Glancing away at another screen automatically clutches gestures to standby."],
+         C_WHITE)
 
 add_card(s4, Inches(6.8), Inches(1.9), Inches(5.7), Inches(2.3),
          "ShoulderGuard Intruder Shield",
-         ["BlazeFace scans the workspace for shoulder surfers.",
-          "If a second face appears behind you, fires Win+D to hide sensitive work instantly."],
-         C_ACCENT,
-         "Second person peers over shoulder -> Desktop minimizes")
+         ["Continuous BlazeFace scan monitors for shoulder surfers in public spaces.",
+          "If a second face appears behind you, automatically fires Win+D to protect sensitive work."],
+         C_ACCENT)
 
 add_card(s4, Inches(6.8), Inches(4.45), Inches(5.7), Inches(2.3),
          "Body Ownership & Anti-Jitter Physics",
-         ["Calculates Euclidean reach boundaries between hand wrist and face center.",
-          "Passersby or background people cannot steal control; hallucinated joints freeze."],
-         C_GOLD,
-         "Hands outside reach radius are rejected")
-
-# ==========================================
-# SLIDE 5: Stage Mode & Camera Sharing
-# ==========================================
-s5 = create_base_slide()
-add_header(s5, "Engineering Breakthroughs: Stage Range & Camera Sharing", "04 • KEY INNOVATIONS")
-add_card(s5, Inches(0.8), Inches(1.9), Inches(5.6), Inches(4.8),
-         "Stage & Distance Mode",
-         ["The Challenge: Webcams at 6-10 feet compress face resolution down to 10 pixels, causing false look away lockouts.",
-          "Dynamic Distance Ratio: Real-time calculation of face width relative to screen width (fw / w).",
-          "Automatic Focus Bypass: Gaze lockout gracefully disengages when presenting or at distance.",
-          "6.0x Arm Reach: Expands presenter reach envelope so wide, expressive stage gestures register smoothly."],
-         C_GOLD,
-         "Step back 8 feet and wave to advance slides!")
-
-add_card(s5, Inches(6.8), Inches(1.9), Inches(5.7), Inches(4.8),
-         "Multi-App Camera Sharing",
-         ["The Challenge: Windows UVC camera drivers enforce exclusive hardware locks, crashing Zoom or Google Meet if CV is running.",
-          "Native Frame Server: Configured OpenCV Media Foundation (CAP_MSMF) to hook svchost.exe -k Camera.",
-          "Zero Virtual Camera Latency: No third-party drivers or OBS needed.",
-          "1-Click Dashboard Setup: Integrated OS deep-link (ms-settings:camera) with in-app guidance for instant multi-app streaming."],
-         C_WHITE,
-         "Google Meet and ZeroTouch run on same webcam!")
-
-# ==========================================
-# SLIDE 6: System Architecture
-# ==========================================
-s6 = create_base_slide()
-add_header(s6, "System Architecture: High-Throughput & Low Footprint", "05 • TECHNICAL ARCHITECTURE")
-add_card(s6, Inches(0.8), Inches(1.9), Inches(5.6), Inches(4.8),
-         "High-Throughput IPC Pipeline",
-         ["Shared Memory (multiprocessing.shared_memory): Zero-copy 30 FPS telemetry and downscaled feed streamed between engine and GUI.",
-          "Ultra-Lightweight Dashboard: CustomTkinter widget (350x600) with collapsible video preview to save CPU cycles.",
-          "Windows System Tray: Completely hideable to system tray with persistent background execution.",
-          "Floating Capsule HUD: Tkinter topmost micro-pill that drops down for 1.2s to confirm gestures without blocking work."],
-         C_ACCENT)
-
-add_card(s6, Inches(6.8), Inches(1.9), Inches(5.7), Inches(4.8),
-         "Tech Stack & Standards",
-         ["Computer Vision: Google MediaPipe Tasks API (HandLandmarker + BlazeFace)",
-          "Frame Ingestion: OpenCV 5.0 with MSMF Frame Server Broker",
-          "Hardware Audio Hook: Windows Core Audio via Pycaw (Endpoint Volume API)",
-          "OS Automation: PyAutoGUI, Pynput, PyWin32 (Win32 API)",
-          "Acoustic Haptics: Windows Sound API (Winsound) with custom wave chimes",
-          "Packaging: Native 1-Click Batch Launcher (Start_Aero.bat) with virtualenv isolation"],
+         ["Calculates Euclidean distance between wrist and face; rejects passerby hands.",
+          "Bone length stability and acceleration checks freeze hallucinated hand joints."],
          C_GOLD)
 
 # ==========================================
-# SLIDE 7: Live Demo Guide & Conclusion
+# SLIDE 5: Technical Architecture & Wrap-Up (3:00 - 4:00)
 # ==========================================
-s7 = create_base_slide()
-add_header(s7, "Live Demonstration: The 4 Golden Demos", "06 • LIVE DEMONSTRATION & WRAP-UP")
-add_card(s7, Inches(0.8), Inches(1.9), Inches(5.6), Inches(4.8),
-         "4 Interactive Demonstrations for Judges",
-         ["1. Slide Deck Navigation: Back-of-hand swipe to cycle presentation slides forward and backward right now.",
-          "2. Ghost-Mute: Index finger to mouth to toggle Windows hardware microphone mute with haptic chime.",
-          "3. Smart Activity Lockout: Typing on the keyboard instantly freezes gestures to prevent accidental input.",
-          "4. Stage Distance Reach: Stepping back across the room to show seamless long-range slide control."],
-         C_GREEN,
-         "Ready for Live Judges Hands-On")
+s5 = create_base_slide()
+add_header(s5, "Technical Architecture & Hackathon Wrap-Up", "04 • ARCHITECTURE & SUMMARY")
+add_card(s5, Inches(0.8), Inches(1.9), Inches(5.6), Inches(4.8),
+         "High-Performance System Architecture",
+         ["Shared Memory IPC: Zero-copy multiprocessing.shared_memory streams 30 FPS telemetry and previews to GUI.",
+          "Hardware Audio Hook: Direct Windows Core Audio (Pycaw) input endpoint volume control.",
+          "Windows Camera Frame Server: OpenCV MSMF backend hooks svchost.exe -k Camera for native multi-app streaming.",
+          "Ambient HUD: CustomTkinter executive dashboard + topmost micro-pill Floating Capsule."],
+         C_ACCENT)
 
-add_card(s7, Inches(6.8), Inches(1.9), Inches(5.7), Inches(4.8),
-         "Summary & Future Vision",
-         ["Summary: ZeroTouch transforms standard webcams into executive, enterprise-grade spatial interfaces without cloud risk or false inputs.",
-          "Future Roadmap:",
-          "  • Multimodal head-tilt micro gestures for accessibility.",
-          "  • Native Windows 11 Copilot / Taskbar widget integration.",
-          "  • Hardware acceleration optimizations via ONNX Runtime / DirectML.",
-          "GitHub: https://github.com/Philphil-org/UAT-Hackathon"],
+add_card(s5, Inches(6.8), Inches(1.9), Inches(5.7), Inches(4.8),
+         "Summary & Why ZeroTouch Wins",
+         ["Executive Polish: Enterprise-ready companion built for everyday work, not a tech demo.",
+          "Zero Cloud Risk: True local privacy that enterprise users can actually deploy.",
+          "Production Ready: Complete with 1-click batch launcher, custom Windows taskbar branding, and system tray integration.",
+          "Open Source: https://github.com/Philphil-org/UAT-Hackathon"],
          C_GOLD)
 
 output_path = 'ZeroTouch_Presentation.pptx'
 prs.save(output_path)
-print(f'Successfully generated {output_path}')
+print(f'Successfully generated clean 5-slide deck: {output_path}')
