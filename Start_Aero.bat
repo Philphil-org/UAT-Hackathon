@@ -15,21 +15,26 @@ if not exist "venv\Scripts\activate.bat" (
     echo [INFO] First time setup detected!
     echo [INFO] Creating Python virtual environment...
     python -m venv venv
+    if errorlevel 1 (
+        echo [ERROR] Python not found or unable to create venv. Please ensure Python 3.10+ is installed.
+        pause
+        exit /b 1
+    )
     
-    echo [INFO] Installing required AI models and dependencies (this may take a minute)...
+    echo [INFO] Installing required dependencies (this may take a minute)...
     call venv\Scripts\activate.bat
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
     echo.
     echo [SUCCESS] Setup complete!
 ) else (
-    echo [INFO] Environment found. Loading Aero...
+    echo [INFO] Environment found. Loading ZeroTouch...
     call venv\Scripts\activate.bat
 )
 
 :: Run the launcher
-echo [INFO] Starting the Aero UI Launcher...
+echo [INFO] Starting ZeroTouch OS...
 python launcher.py
 
 echo.
-echo [INFO] Aero has been closed.
+echo [INFO] ZeroTouch has been closed.
 pause

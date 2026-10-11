@@ -100,33 +100,32 @@ The official executive presentation deck is included directly in the repository:
 
 ---
 
-## 🚀 1-Click Setup & Launch (Windows)
+## 🚀 Quick Setup & Launch (No PowerShell Required)
 
-### Option A: 1-Click Batch Launcher (Recommended)
-1. Clone the repository:
-   ```powershell
-   git clone https://github.com/Philphil-org/UAT-Hackathon.git
-   cd UAT-Hackathon
-   ```
-2. Double-click **`Start_Aero.bat`**.
-   * Automatically sets up an isolated Python virtual environment.
-   * Installs all AI models and dependencies.
-   * Boots the companion widget.
+### Method 1: Download ZIP (Direct from Browser - Zero Git / Zero PowerShell)
+1. On GitHub, click the green **`<> Code`** button at the top-right.
+2. Click **`Download ZIP`**.
+3. Extract the ZIP folder anywhere on the presentation machine.
+4. Double-click **`Start_Aero.bat`**.
+   * Runs natively via standard Windows Command Prompt (`cmd.exe`).
+   * No PowerShell execution policies or elevated admin rights required!
+   * Automatically prepares the virtual environment and starts ZeroTouch.
 
-### Option B: Manual Setup
-```powershell
-# Create and activate environment
+### Method 2: Standard Command Prompt (`cmd.exe`)
+If cloning or running manually from standard Windows Command Prompt:
+```cmd
+git clone https://github.com/Philphil-org/UAT-Hackathon.git
+cd UAT-Hackathon
+
+:: Run installer batch directly:
+Start_Aero.bat
+```
+Or manual CMD execution:
+```cmd
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-
-# Install requirements
+call venv\Scripts\activate.bat
 pip install -r requirements.txt
-
-# Run the companion widget
 python launcher.py
-
-# Or run the core vision daemon directly
-python main.py
 ```
 
 ---

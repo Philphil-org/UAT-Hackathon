@@ -242,10 +242,11 @@ class ZeroTouchWidget(ctk.CTk):
             res = subprocess.check_output(['powershell', '-NoProfile', '-Command', 
                 "Get-PnpDevice -Class Camera -Status OK | Select-Object -ExpandProperty FriendlyName"], text=True, creationflags=0x08000000)
             cams = [line.strip() for line in res.split('\n') if line.strip()]
-            if not cams: return ["0: Default Camera"]
-            return [f"{i}: {name}" for i, name in enumerate(cams)]
-        except:
-            return ["0", "1", "2"]
+            if cams:
+                return [f"{i}: {name}" for i, name in enumerate(cams)]
+        except Exception:
+            pass
+        return ["0: Default Camera", "1: Secondary Camera", "2: External USB Camera"]
 
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
