@@ -390,7 +390,8 @@ def main():
                                 raw_yaw = abs(nose.x - eye_center_x) / eye_dist
                                 # Smooth with Exponential Moving Average to prevent hand clipping spikes
                                 smoothed_yaw = 0.65 * smoothed_yaw + 0.35 * raw_yaw
-                                is_gaze_engaged = smoothed_yaw <= 0.28
+                                # Requires a deliberate head turn (>0.32) so looking across large monitors doesn't lock up
+                                is_gaze_engaged = smoothed_yaw <= 0.32
                                 last_gaze_engaged = is_gaze_engaged
                                     
                 # Draw facial telemetry
@@ -403,13 +404,14 @@ def main():
                         gaze_text = "GAZE: ENGAGED" if is_gaze_engaged else "GAZE: LOOKING AWAY"
                         cv2.putText(frame, gaze_text, (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 2)
             else:
-                # Face occluded by hand or off-screen
+                # Face temporarily occluded by hand, dropped frame, or lighting dip
                 if config.get('gaze_clutch', True):
-                    # If face missing for >0.25s, cannot verify gaze -> keep gestures paused!
-                    if time.time() - last_face_seen_time > 0.25:
-                        is_gaze_engaged = False
-                    else:
+                    # 1.5-second grace cooldown: if camera struggles to track face while you were engaged,
+                    # don't lock you out—seamlessly maintain your last verified state!
+                    if time.time() - last_face_seen_time < 1.5:
                         is_gaze_engaged = last_gaze_engaged
+                    else:
+                        is_gaze_engaged = False
                         
             # Privacy Mode Trigger (Shoulder Surfer)
             if config.get('shoulder_guard', True) and faces_detected > 1:

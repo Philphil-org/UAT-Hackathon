@@ -1,6 +1,6 @@
 {
     "camera_index": 0,
-    "show_camera_feed": false,
+    "show_camera_feed": true,
     "shoulder_guard": false,
     "typing_lockout": true,
     "gaze_clutch": true
