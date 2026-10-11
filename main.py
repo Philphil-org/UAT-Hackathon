@@ -52,7 +52,7 @@ def get_active_app_context():
 
         # 2. Meeting Mode (Zoom, MS Teams, Google Meet, Webex, Discord)
         if any(p in lower_proc for p in ['zoom', 'teams', 'webex', 'discord']) or \
-           any(t in lower_title for t in ['meet - ', 'meet – ', 'meet: ', 'google meet', 'meet.google.com', 'zoom meeting', 'zoom', 'microsoft teams', 'webex']):
+           any(t in lower_title for t in ['meet - ', 'meet – ', 'meet: ', 'google meet', 'meet.google.com', 'zoom meeting', 'zoom', 'microsoft teams', 'teams meeting', 'teams.microsoft.com', '| teams', 'teams |', 'webex']):
             return 'MEETING', title, pname
 
         # 3. Video & Media Streaming (YouTube, Netflix, Spotify, VLC, PotPlayer)
