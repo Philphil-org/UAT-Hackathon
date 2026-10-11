@@ -2,6 +2,9 @@
 title Aero - Zero-Touch OS Installer & Launcher
 color 0b
 
+:: Ensure the script runs in its own directory regardless of how it was launched
+cd /d "%~dp0"
+
 echo ==============================================
 echo        Aero: Zero-Touch OS Engine
 echo ==============================================
