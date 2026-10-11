@@ -348,8 +348,8 @@ def main():
         
         try:
             # Process the frame for hands and faces
-            results = detector.detect_for_video(mp_image, timestamp_ms)
-            if config.get('shoulder_guard', True):
+            # Run face detection if ShoulderGuard OR Gaze-Clutch is enabled
+            if config.get('shoulder_guard', True) or config.get('gaze_clutch', True):
                 face_results = face_detector.detect_for_video(mp_image, timestamp_ms)
             else:
                 class EmptyResults: detections = []
@@ -395,7 +395,7 @@ def main():
                         cv2.putText(frame, gaze_text, (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 2)
                         
             # Privacy Mode Trigger (Shoulder Surfer)
-            if faces_detected > 1:
+            if config.get('shoulder_guard', True) and faces_detected > 1:
                 if privacy_trigger_start is None:
                     privacy_trigger_start = time.time()
                 elif time.time() - privacy_trigger_start > 0.5: # 0.5s requirement to prevent blips
@@ -786,26 +786,29 @@ def main():
             # Safely catch any timestamp overlapping errors and continue
             pass
                 
-            if not results.hand_landmarks:
-                prev_points = None
-                hitchhiker_start_x = None
-                prev_pinch_dist = None
-                prev_palm_height = None
-                prev_thumb_tip = None
-                prev_index_tip = None
-                pinch_start_time = None
-                volume_active = False
-                back_swipe_anchor_x = None
-                back_swipe_anchor_y = None
-                back_swipe_locked_out = False
-    
-            # Calculate FPS
-            curr_time = time.time()
-            fps = 1 / (curr_time - prev_time)
-            prev_time = curr_time
-            cv2.putText(frame, f'FPS: {int(fps)}', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            if low_light_active:
-                cv2.putText(frame, "LIGHT BOOST ACTIVE (CLAHE)", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 215, 255), 2)
+        if not results.hand_landmarks:
+            prev_points = None
+            hitchhiker_start_x = None
+            prev_pinch_dist = None
+            prev_palm_height = None
+            prev_thumb_tip = None
+            prev_index_tip = None
+            pinch_start_time = None
+            volume_active = False
+            back_swipe_anchor_x = None
+            back_swipe_anchor_y = None
+            back_swipe_locked_out = False
+
+        # Calculate FPS
+        curr_time = time.time()
+        fps = 1 / (curr_time - prev_time + 1e-5)
+        prev_time = curr_time
+        cv2.putText(frame, f'FPS: {int(fps)}', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        # Environmental Lighting Telemetry
+        lum_text = f"LIGHT BOOST: ACTIVE (LUM {int(avg_luminance)})" if low_light_active else f"LIGHT: NORMAL (LUM {int(avg_luminance)})"
+        lum_color = (0, 215, 255) if low_light_active else (180, 180, 180)
+        cv2.putText(frame, lum_text, (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.55, lum_color, 2)
     
             # Show the video
         if config.get('show_camera_feed', True):
