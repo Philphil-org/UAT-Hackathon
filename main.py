@@ -322,6 +322,21 @@ def main():
         # Flip the frame for a selfie-view
         frame = cv2.flip(frame, 1)
         h, w, c = frame.shape # Define here so HUD can use it even when no hands are in frame
+        
+        # --- Environmental Adaptive Exposure (CLAHE Low-Light Boost) ---
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        avg_luminance = cv2.mean(gray)[0]
+        low_light_active = False
+        
+        if avg_luminance < 65.0: # Dim or backlit environment
+            low_light_active = True
+            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+            l_chan, a_chan, b_chan = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+            cl = clahe.apply(l_chan)
+            enhanced_lab = cv2.merge((cl, a_chan, b_chan))
+            frame = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+            
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
         # Convert numpy array to MediaPipe Image format
@@ -344,6 +359,7 @@ def main():
             faces_detected = 0
             primary_face_center = None
             max_face_area = 0
+            is_gaze_engaged = True
             
             if face_results.detections:
                 faces_detected = len(face_results.detections)
@@ -351,13 +367,32 @@ def main():
                     bbox = detection.bounding_box
                     x, y, fw, fh = int(bbox.origin_x), int(bbox.origin_y), int(bbox.width), int(bbox.height)
                     
-                    # Draw a stealthy blue box around all faces
-                    cv2.rectangle(frame, (x, y), (x + fw, y + fh), (255, 0, 0), 2)
-                    
                     area = fw * fh
                     if area > max_face_area:
                         max_face_area = area
                         primary_face_center = (x + fw//2, y + fh//2)
+                        
+                        # --- Gaze-Clutch™ Head Yaw Telemetry ---
+                        if hasattr(detection, 'keypoints') and len(detection.keypoints) >= 3:
+                            kp = detection.keypoints
+                            r_eye, l_eye, nose = kp[0], kp[1], kp[2]
+                            eye_center_x = (r_eye.x + l_eye.x) / 2.0
+                            eye_dist = abs(l_eye.x - r_eye.x)
+                            if eye_dist > 0.01:
+                                yaw_ratio = abs(nose.x - eye_center_x) / eye_dist
+                                # If turned more than ~22 degrees away from screen
+                                if yaw_ratio > 0.32:
+                                    is_gaze_engaged = False
+                                    
+                # Draw facial telemetry
+                for detection in face_results.detections:
+                    bbox = detection.bounding_box
+                    x, y, fw, fh = int(bbox.origin_x), int(bbox.origin_y), int(bbox.width), int(bbox.height)
+                    box_color = (0, 215, 255) if is_gaze_engaged else (0, 0, 255)
+                    cv2.rectangle(frame, (x, y), (x + fw, y + fh), box_color, 2)
+                    if config.get('gaze_clutch', True):
+                        gaze_text = "GAZE: ENGAGED" if is_gaze_engaged else "GAZE: LOOKING AWAY"
+                        cv2.putText(frame, gaze_text, (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 2)
                         
             # Privacy Mode Trigger (Shoulder Surfer)
             if faces_detected > 1:
@@ -475,12 +510,19 @@ def main():
                         if config.get('typing_lockout', True):
                             typing_paused = time.time() - last_keypress_time < 2.0
                         
-                        gestures_paused = jitter_paused or typing_paused
+                        # If Gaze-Clutch is enabled and user is looking away, pause gestures!
+                        gaze_paused = False
+                        if config.get('gaze_clutch', True) and not is_gaze_engaged:
+                            gaze_paused = True
+                        
+                        gestures_paused = jitter_paused or typing_paused or gaze_paused
                         
                         if jitter_paused:
                             cv2.putText(frame, "JITTER PAUSE", (wrist_x - 60, wrist_y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
                         elif typing_paused:
                             cv2.putText(frame, "TYPING - STANDBY", (wrist_x - 80, wrist_y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 165, 0), 2)
+                        elif gaze_paused:
+                            cv2.putText(frame, "GAZE PAUSE (LOOKING AWAY)", (wrist_x - 110, wrist_y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 100, 255), 2)
                             
                         # Calculate Motion (Stillness Check on Wrist and Index Tip)
                         current_points = (
@@ -762,6 +804,8 @@ def main():
             fps = 1 / (curr_time - prev_time)
             prev_time = curr_time
             cv2.putText(frame, f'FPS: {int(fps)}', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            if low_light_active:
+                cv2.putText(frame, "LIGHT BOOST ACTIVE (CLAHE)", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 215, 255), 2)
     
             # Show the video
         if config.get('show_camera_feed', True):

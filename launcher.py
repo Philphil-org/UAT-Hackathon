@@ -31,8 +31,8 @@ class ZeroTouchWidget(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("ZeroTouch")
-        self.geometry("350x520")
-        self.minsize(320, 480)
+        self.geometry("350x550")
+        self.minsize(320, 500)
         self.configure(fg_color=MIDNIGHT_INK)
         self.resizable(False, False)
         
@@ -45,7 +45,8 @@ class ZeroTouchWidget(ctk.CTk):
             "camera_index": 0,
             "show_camera_feed": True,
             "shoulder_guard": True,
-            "typing_lockout": True
+            "typing_lockout": True,
+            "gaze_clutch": True
         }
         self.load_config()
         self.process = None
@@ -104,6 +105,11 @@ class ZeroTouchWidget(ctk.CTk):
         self.sw3 = ctk.CTkSwitch(self.card, text="Smart Typing Lockout", font=self.font_secondary, text_color=SOFT_WHITE, 
                                  variable=self.typing_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
         self.sw3.pack(pady=6, padx=16, anchor="w")
+
+        self.gaze_var = ctk.BooleanVar(value=self.config.get("gaze_clutch", True))
+        self.sw4 = ctk.CTkSwitch(self.card, text="Gaze-Clutch™ (Look-to-Control)", font=self.font_secondary, text_color=SOFT_WHITE, 
+                                 variable=self.gaze_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
+        self.sw4.pack(pady=6, padx=16, anchor="w")
 
         # Camera Dropdown
         ctk.CTkLabel(self.card, text="CAMERA INPUT", font=self.font_telemetry, text_color=COOL_GRAY).pack(pady=(8, 2), padx=16, anchor="w")
@@ -170,6 +176,7 @@ class ZeroTouchWidget(ctk.CTk):
         self.config["show_camera_feed"] = self.show_cam_var.get()
         self.config["shoulder_guard"] = self.shoulder_var.get()
         self.config["typing_lockout"] = self.typing_var.get()
+        self.config["gaze_clutch"] = self.gaze_var.get()
         
         try:
             with open(CONFIG_FILE, "w") as f:
