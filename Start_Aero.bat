@@ -58,14 +58,15 @@ if not exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
 )
 
-:: Launch ZeroTouch using the isolated venv python directly
+:: Launch ZeroTouch cleanly and dismiss the terminal window
 echo [INFO] Launching ZeroTouch OS...
-if exist "venv\Scripts\python.exe" (
-    venv\Scripts\python.exe launcher.py
+if exist "venv\Scripts\pythonw.exe" (
+    start "" "venv\Scripts\pythonw.exe" launcher.py
+    exit /b 0
+) else if exist "venv\Scripts\python.exe" (
+    start "" "venv\Scripts\python.exe" launcher.py
+    exit /b 0
 ) else (
-    python launcher.py
+    start "" python launcher.py
+    exit /b 0
 )
-
-echo.
-echo [INFO] ZeroTouch session ended.
-pause
