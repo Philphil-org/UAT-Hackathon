@@ -33,8 +33,7 @@ class ZeroTouchWidget(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("ZeroTouch")
-        self.geometry("350x700")
-        self.minsize(320, 660)
+        self.minsize(320, 500)
         self.configure(fg_color=MIDNIGHT_INK)
         self.resizable(False, False)
         
@@ -53,6 +52,7 @@ class ZeroTouchWidget(ctk.CTk):
             "shush_mute": False
         }
         self.load_config()
+        self.geometry("350x700" if self.config.get("show_camera_feed", True) else "350x530")
         self.process = None
 
         # Fonts
@@ -143,7 +143,8 @@ class ZeroTouchWidget(ctk.CTk):
 
         # 300x168 Preview Image Display
         self.preview_canvas = ctk.CTkLabel(self.preview_frame, text="", fg_color="#0A0A0E", corner_radius=6, height=168)
-        self.preview_canvas.pack(fill="x", padx=6, pady=(0, 6))
+        if self.show_cam_var.get():
+            self.preview_canvas.pack(fill="x", padx=6, pady=(0, 6))
 
         # Camera Dropdown
         ctk.CTkLabel(self.card, text="CAMERA INPUT", font=self.font_telemetry, text_color=COOL_GRAY).pack(pady=(8, 2), padx=16, anchor="w")
@@ -218,6 +219,16 @@ class ZeroTouchWidget(ctk.CTk):
         self.config["gaze_clutch"] = self.gaze_var.get()
         self.config["shush_mute"] = self.shush_var.get()
         
+        # Dynamically collapse/expand preview video canvas based on toggle
+        if self.show_cam_var.get():
+            if not self.preview_canvas.winfo_ismapped():
+                self.preview_canvas.pack(fill="x", padx=6, pady=(0, 6))
+                self.geometry("350x700")
+        else:
+            if self.preview_canvas.winfo_ismapped():
+                self.preview_canvas.pack_forget()
+                self.geometry("350x530")
+
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump(self.config, f, indent=4)

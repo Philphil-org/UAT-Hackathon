@@ -1,6 +1,6 @@
 {
     "camera_index": 0,
-    "show_camera_feed": true,
+    "show_camera_feed": false,
     "popout_debug_window": false,
     "shoulder_guard": false,
     "typing_lockout": true,
