@@ -20,9 +20,14 @@ class AeroLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("ZeroTouch OS")
-        self.geometry("750x480")
+        self.geometry("850x550")
+        self.minsize(700, 450)
         self.configure(fg_color=MIDNIGHT_INK)
-        self.resizable(False, False)
+        self.resizable(True, True)
+        
+        # High DPI Support
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("dark-blue")
         
         # Load Config
         self.config = {
@@ -72,9 +77,12 @@ class AeroLauncher(ctk.CTk):
                                  variable=self.typing_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
         self.sw3.pack(pady=15, padx=30, anchor="w")
         
-        ctk.CTkLabel(self.left_pane, text="CAMERA HARDWARE INDEX", font=self.font_telemetry, text_color=COOL_GRAY).pack(pady=(30,0), padx=30, anchor="w")
-        self.cam_idx_var = ctk.StringVar(value=str(self.config["camera_index"]))
-        self.cam_combo = ctk.CTkOptionMenu(self.left_pane, values=["0", "1", "2"], variable=self.cam_idx_var, fg_color=HARD_GRAPHITE_LIGHT, button_color=SLATE_BLUE, font=self.font_primary, text_color=SOFT_WHITE, command=self.save_config_combo)
+        ctk.CTkLabel(self.left_pane, text="CAMERAS", font=self.font_telemetry, text_color=COOL_GRAY).pack(pady=(30,0), padx=30, anchor="w")
+        idx_val = str(self.config["camera_index"])
+        cams = self.get_cameras()
+        matched_cam = next((c for c in cams if c.startswith(f"{idx_val}:")), cams[0])
+        self.cam_idx_var = ctk.StringVar(value=matched_cam)
+        self.cam_combo = ctk.CTkOptionMenu(self.left_pane, values=self.get_cameras(), variable=self.cam_idx_var, fg_color=HARD_GRAPHITE_LIGHT, button_color=SLATE_BLUE, font=self.font_primary, text_color=SOFT_WHITE, command=self.save_config_combo)
         self.cam_combo.pack(pady=10, padx=30, anchor="w")
 
         # Trust Badge
@@ -84,18 +92,6 @@ class AeroLauncher(ctk.CTk):
         # --- RIGHT PANE: CALIBRATION & LAUNCH ---
         self.right_pane = ctk.CTkFrame(self, fg_color=MIDNIGHT_INK, corner_radius=0)
         self.right_pane.grid(row=0, column=1, sticky="nsew")
-
-        # Telemetry UI Box
-        self.telemetry_box = ctk.CTkFrame(self.right_pane, fg_color=HARD_GRAPHITE, corner_radius=8, border_width=1, border_color=SLATE_BLUE)
-        self.telemetry_box.pack(pady=40, padx=30, fill="x")
-        
-        self.status_lbl = ctk.CTkLabel(self.telemetry_box, text="ENGINE STATUS: DORMANT", font=self.font_telemetry, text_color=COOL_GRAY)
-        self.status_lbl.pack(pady=(15, 5), padx=20, anchor="w")
-
-        self.console_text = ctk.CTkTextbox(self.telemetry_box, height=120, fg_color=MIDNIGHT_INK, text_color=SLATE_BLUE, font=self.font_telemetry)
-        self.console_text.pack(pady=(0, 15), padx=15, fill="x")
-        self.console_text.insert("0.0", "Awaiting execution command...\nReady to bind hardware hooks.\n")
-        self.console_text.configure(state="disabled")
 
         # Launch Buttons
         self.start_btn = ctk.CTkButton(self.right_pane, text="INITIALIZE ZERO-TOUCH", font=self.font_primary, 
@@ -107,6 +103,18 @@ class AeroLauncher(ctk.CTk):
                                       fg_color=HARD_GRAPHITE_LIGHT, text_color=SOFT_WHITE, hover_color="#333344",
                                       height=45, state="disabled", command=self.stop_engine)
         self.stop_btn.pack(pady=10, padx=30, fill="x")
+
+
+    def get_cameras(self):
+        try:
+            import subprocess
+            res = subprocess.check_output(['powershell', '-NoProfile', '-Command', 
+                "Get-PnpDevice -Class Camera -Status OK | Select-Object -ExpandProperty FriendlyName"], text=True, creationflags=0x08000000)
+            cams = [line.strip() for line in res.split('\n') if line.strip()]
+            if not cams: return ["0: Default Camera"]
+            return [f"{i}: {name}" for i, name in enumerate(cams)]
+        except:
+            return ["0", "1", "2"]
 
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
@@ -120,7 +128,7 @@ class AeroLauncher(ctk.CTk):
         self.save_config()
 
     def save_config(self):
-        self.config["camera_index"] = int(self.cam_idx_var.get())
+        self.config["camera_index"] = int(self.cam_idx_var.get().split(":")[0])
         self.config["show_camera_feed"] = self.show_cam_var.get()
         self.config["shoulder_guard"] = self.shoulder_var.get()
         self.config["typing_lockout"] = self.typing_var.get()
@@ -131,19 +139,10 @@ class AeroLauncher(ctk.CTk):
         except Exception:
             pass
 
-    def log(self, text):
-        self.console_text.configure(state="normal")
-        self.console_text.insert("end", text + "\n")
-        self.console_text.see("end")
-        self.console_text.configure(state="disabled")
-
     def start_engine(self):
         if self.process is None:
             self.save_config()
-            self.status_lbl.configure(text="ENGINE STATUS: ENGAGED", text_color=CHAMPAGNE_GOLD)
-            self.log("> Binding spatial hooks...")
-            self.log("> Warming up TensorFlow Lite models...")
-            
+                                                
             self.start_btn.configure(state="disabled")
             self.stop_btn.configure(state="normal")
             
@@ -153,25 +152,21 @@ class AeroLauncher(ctk.CTk):
                     python_exe = "venv/Scripts/python.exe"
             
             def run():
-                self.process = subprocess.Popen([python_exe, "main.py"], 
-                                                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+                # 0x08000000 is CREATE_NO_WINDOW in Windows, which prevents the terminal from popping up
+                flags = subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000
+                self.process = subprocess.Popen([python_exe, "main.py"], creationflags=flags)
                 self.process.wait()
                 self.after(0, self.engine_stopped)
                 
             threading.Thread(target=run, daemon=True).start()
-            self.log("> ZeroTouch Core running in background.")
-
+            
     def stop_engine(self):
         if self.process is not None:
-            self.status_lbl.configure(text="ENGINE STATUS: TERMINATING", text_color=COOL_GRAY)
-            self.log("> Terminating daemon...")
-            import signal
-            os.kill(self.process.pid, signal.CTRL_BREAK_EVENT)
+            # Use taskkill to forcefully kill the process tree without leaving zombies
+            subprocess.call(['taskkill', '/F', '/T', '/PID', str(self.process.pid)], creationflags=0x08000000)
             
     def engine_stopped(self):
         self.process = None
-        self.status_lbl.configure(text="ENGINE STATUS: DORMANT", text_color=COOL_GRAY)
-        self.log("> Engine halted successfully.")
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
 

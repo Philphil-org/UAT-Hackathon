@@ -5,6 +5,68 @@ import pyautogui
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from pynput import keyboard
+import tkinter as tk
+import threading
+import queue
+import winsound
+
+# --- Floating Capsule (Ambient UI) ---
+class FloatingCapsule:
+    def __init__(self):
+        self.q = queue.Queue()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        self.root = tk.Tk()
+        self.root.overrideredirect(True)
+        self.root.wm_attributes("-topmost", True)
+        
+        # Center top of screen (Micro-Pill for Icons)
+        screen_width = self.root.winfo_screenwidth()
+        x = (screen_width // 2) - 40
+        self.root.geometry(f"80x50+{x}+40")
+        
+        self.root.configure(bg="#0F0F14")
+        self.frame = tk.Frame(self.root, bg="#0F0F14", highlightbackground="#D4AF6A", highlightthickness=1)
+        self.frame.pack(fill="both", expand=True)
+        
+        # Larger font for crisp Unicode icons
+        self.label = tk.Label(self.frame, text="", fg="#D4AF6A", bg="#0F0F14", font=("Segoe UI", 22))
+        self.label.pack(expand=True)
+        
+        self.root.withdraw()
+        self.hide_id = None
+        
+        self.root.after(10, self._check_queue)
+        self.root.mainloop()
+
+    def _check_queue(self):
+        try:
+            msg = self.q.get_nowait()
+            self.label.config(text=msg)
+            self.root.deiconify()
+            
+            if self.hide_id:
+                self.root.after_cancel(self.hide_id)
+            self.hide_id = self.root.after(1500, self.root.withdraw)
+        except queue.Empty:
+            pass
+        self.root.after(50, self._check_queue)
+
+    def show(self, text, beep="default"):
+        self.q.put(text)
+        try:
+            if beep == "shush":
+                winsound.PlaySound("SystemHand", winsound.SND_ALIAS | winsound.SND_ASYNC)
+            elif beep == "tap":
+                winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
+            elif beep == "shield":
+                winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS | winsound.SND_ASYNC)
+            elif beep:
+                winsound.PlaySound("SystemDefault", winsound.SND_ALIAS | winsound.SND_ASYNC)
+        except Exception:
+            pass
 
 # --- Smart Typing Detection (Background Listener) ---
 last_keypress_time = 0
@@ -112,6 +174,8 @@ def get_hand_size(hand_landmarks):
     return (max(x_coords) - min(x_coords)) * (max(y_coords) - min(y_coords))
 
 def main():
+    capsule = FloatingCapsule()
+    
     # Load Settings from config.json (managed by launcher)
     config = {
         "camera_index": 0,
@@ -167,13 +231,9 @@ def main():
     palm_start_time = None
     prev_points = None
     
-    last_swipe_time = 0
-    middle_tap_count = 0
-    last_middle_tap_time = 0
-    is_middle_tapping = False
-    ring_tap_count = 0
-    last_ring_tap_time = 0
-    is_ring_tapping = False
+    swipe_start_x = None
+    swipe_start_y = None
+    swipe_start_time = 0
     
     prev_pinch_dist = None
     pinch_start_time = None
@@ -192,6 +252,7 @@ def main():
     
     shush_active = False
     last_shush_time = 0
+    was_hand_present = False
 
     while True:
         success, frame = cap.read()
@@ -246,14 +307,14 @@ def main():
                 elif time.time() - privacy_trigger_start > 0.5: # 0.5s requirement to prevent blips
                     if not privacy_mode:
                         privacy_mode = True
-                        print("🚨 INTRUDER DETECTED! Minimizing windows!")
+                        capsule.show('🛡️', 'shield')
                         try: pyautogui.hotkey('win', 'd') # Show Desktop
                         except: pass
             else:
                 privacy_trigger_start = None
                 if privacy_mode:
                     privacy_mode = False
-                    print("✅ Clear. Restoring windows.")
+                    capsule.show("?", "default")
                     try: pyautogui.hotkey('win', 'd') # Restore windows
                     except: pass
                     
@@ -266,6 +327,11 @@ def main():
                 else:
                     time.sleep(0.03) # Match camera framerate pacing roughly
                 continue # Skip gesture processing
+            
+            hand_is_present = bool(results.hand_landmarks)
+            if hand_is_present and not was_hand_present:
+                capsule.show('✋', beep=None)
+            was_hand_present = hand_is_present
             
             # Draw green circles on the joints for all hands
             if results.hand_landmarks and results.handedness:
@@ -393,7 +459,7 @@ def main():
                                 
                                 # Debounce / Cooldown: Only trigger once every 1.5 seconds
                                 if time.time() - last_palm_time > 1.5:
-                                    print("✋ PRIMARY PALM HELD! Sending Play/Pause to OS...")
+                                    capsule.show('⏯', 'playpause')
                                     
                                     # Execute the OS-level media command
                                     try:
@@ -426,7 +492,7 @@ def main():
                                 if index_dist > palm_height * 1.3 and middle_dist < palm_height * 1.1:
                                     cv2.circle(frame, index_px, 20, (0, 0, 255), -1) # Red indicator for mute
                                     if time.time() - last_shush_time > 1.5:
-                                        print("🤫 SHUSH! Toggling Mute...")
+                                        capsule.show('🔇', 'shush')
                                         try: pyautogui.press('volumemute')
                                         except: pass
                                         last_shush_time = time.time()
@@ -436,65 +502,61 @@ def main():
                             else:
                                 shush_active = False
     
-                        # --- Air Taps (Next/Prev Track) ---
-                        # We use Middle+Thumb and Ring+Thumb to avoid conflicting with the Volume Slider (Index+Thumb)
+                        # --- Grab & Slide (Next/Prev Track) ---
+                        # Pinch Middle+Thumb and swipe Left/Right
                         if not is_palm_open(primary_landmarks, primary_handedness) and not gestures_paused:
                             wrist = primary_landmarks[0]
                             thumb = primary_landmarks[4]
                             middle = primary_landmarks[12]
-                            ring = primary_landmarks[16]
                             palm_height = get_dist(wrist, primary_landmarks[9])
-                            
                             current_time = time.time()
                             
-                            # Check Middle+Thumb Tap (Next Track)
-                            # Using 3D depth to ensure holding a thick object (like a phone) doesn't trigger the tap
                             middle_dist = get_dist3d(thumb, middle)
                             if middle_dist < palm_height * 0.12:
-                                if not is_middle_tapping:
-                                    # Debounce lowered to 0.08s to allow extremely fast double taps
-                                    if current_time - last_middle_tap_time > 0.08:
-                                        is_middle_tapping = True
-                                        # Combo window expanded to 1.0s to allow slower double taps
-                                        if current_time - last_middle_tap_time > 1.0:
-                                            middle_tap_count = 0
-                                        middle_tap_count += 1
-                                        last_middle_tap_time = current_time
+                                if swipe_start_x is None:
+                                    swipe_start_x = wrist.x
+                                    swipe_start_y = wrist.y
+                                    swipe_start_time = current_time
+                                else:
+                                    dx = wrist.x - swipe_start_x
+                                    
+                                    # --- Visual Slider in Debug Feed ---
+                                    start_px = (int(swipe_start_x * w), int(swipe_start_y * h))
+                                    curr_px = (int(wrist.x * w), int(wrist.y * h))
+                                    left_thresh = (int((swipe_start_x - 0.10) * w), int(swipe_start_y * h))
+                                    right_thresh = (int((swipe_start_x + 0.10) * w), int(swipe_start_y * h))
+                                    
+                                    # Draw the anchor and the horizontal rail
+                                    cv2.line(frame, left_thresh, right_thresh, (100, 100, 100), 2)
+                                    cv2.circle(frame, left_thresh, 8, (100, 100, 100), -1)
+                                    cv2.circle(frame, right_thresh, 8, (100, 100, 100), -1)
+                                    cv2.circle(frame, start_px, 12, (0, 215, 255), -1) # Gold anchor
+                                    
+                                    # Color changes to Green if threshold is crossed
+                                    line_color = (0, 215, 255)
+                                    if dx > 0.10 or dx < -0.10:
+                                        line_color = (0, 255, 0)
                                         
-                                        x, y = int(middle.x * w), int(middle.y * h)
-                                        cv2.circle(frame, (x, y), 25, (0, 255, 255), -1)
-                                        
-                                        if middle_tap_count == 2:
-                                            print("✌️➡️ DOUBLE TAP MIDDLE (Next Track)")
+                                    cv2.line(frame, start_px, curr_px, line_color, 4)
+                                    cv2.circle(frame, curr_px, 15, line_color, -1)
+                                    
+                                    # --- Action Triggers ---
+                                    if current_time - swipe_start_time < 1.0:
+                                        if dx > 0.10: # Swiped Right
+                                            capsule.show('⏭', 'tap')
                                             try: pyautogui.press('nexttrack') 
                                             except: pass
-                                            middle_tap_count = 0
-                            # Hysteresis
-                            elif middle_dist > palm_height * 0.22:
-                                is_middle_tapping = False
-                                
-                            # Check Ring+Thumb Tap (Prev Track)
-                            ring_dist = get_dist3d(thumb, ring)
-                            if ring_dist < palm_height * 0.12:
-                                if not is_ring_tapping:
-                                    if current_time - last_ring_tap_time > 0.08:
-                                        is_ring_tapping = True
-                                        if current_time - last_ring_tap_time > 1.0:
-                                            ring_tap_count = 0
-                                        ring_tap_count += 1
-                                        last_ring_tap_time = current_time
-                                        
-                                        x, y = int(ring.x * w), int(ring.y * h)
-                                        cv2.circle(frame, (x, y), 25, (255, 0, 255), -1)
-                                        
-                                        if ring_tap_count == 2:
-                                            print("✌️⬅️ DOUBLE TAP RING (Prev Track)")
+                                            swipe_start_x = None
+                                            swipe_start_y = None
+                                        elif dx < -0.10: # Swiped Left
+                                            capsule.show('⏮', 'tap')
                                             try: pyautogui.press('prevtrack') 
                                             except: pass
-                                            ring_tap_count = 0
-                            elif ring_dist > palm_height * 0.22:
-                                is_ring_tapping = False
-    
+                                            swipe_start_x = None
+                            else:
+                                swipe_start_x = None
+                                swipe_start_y = None
+                                
                         # --- Dynamic Volume Control (Pinch Slider) ---
                         # This runs if palm is not active
                         if not is_palm_open(primary_landmarks, primary_handedness) and not gestures_paused:
@@ -548,7 +610,7 @@ def main():
                                                         volume_initial_dir = None
                                                 else:
                                                     volume_initial_dir = "UP"
-                                                    print(f"🔊 VOLUME UP (+{steps*2}%)")
+                                                    capsule.show('🔊', beep=None)
                                                     for _ in range(steps): pyautogui.press('volumeup')
                                                     prev_pinch_dist = pinch_dist
                                                     volume_last_change_time = time.time()
@@ -564,7 +626,7 @@ def main():
                                                         volume_initial_dir = None
                                                 else:
                                                     volume_initial_dir = "DOWN"
-                                                    print(f"🔉 VOLUME DOWN (-{steps*2}%)")
+                                                    capsule.show('🔉', beep=None)
                                                     for _ in range(steps): pyautogui.press('volumedown')
                                                     prev_pinch_dist = pinch_dist
                                                     volume_last_change_time = time.time()
@@ -625,3 +687,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
