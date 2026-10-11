@@ -1,40 +1,71 @@
 @echo off
-title Aero - Zero-Touch OS Installer & Launcher
+title ZeroTouch OS - Installer & Launcher
 color 0b
 
-:: Ensure the script runs in its own directory regardless of how it was launched
+:: Change working directory to this script's directory
 cd /d "%~dp0"
 
 echo ==============================================
-echo        Aero: Zero-Touch OS Engine
+echo        ZeroTouch OS - Spatial Companion
 echo ==============================================
 echo.
 
-:: Check if the virtual environment exists
+:: Detect Python command (check 'python' then 'py')
+set "PY_CMD="
+python --version >nul 2>&1
+if not errorlevel 1 (
+    set "PY_CMD=python"
+) else (
+    py --version >nul 2>&1
+    if not errorlevel 1 (
+        set "PY_CMD=py"
+    )
+)
+
+if "%PY_CMD%"=="" (
+    echo [ERROR] Python was not found in your system PATH!
+    echo.
+    echo Please install Python 3.10+ from python.org
+    echo IMPORTANT: Make sure to check the box "Add Python to PATH" during installation.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo [INFO] Detected Python engine: %PY_CMD%
+%PY_CMD% --version
+
+:: Check if virtual environment exists
 if not exist "venv\Scripts\activate.bat" (
+    echo.
     echo [INFO] First time setup detected!
     echo [INFO] Creating Python virtual environment...
-    python -m venv venv
+    %PY_CMD% -m venv venv
     if errorlevel 1 (
-        echo [ERROR] Python not found or unable to create venv. Please ensure Python 3.10+ is installed.
+        echo [ERROR] Failed to create virtual environment!
         pause
         exit /b 1
     )
     
-    echo [INFO] Installing required dependencies (this may take a minute)...
+    echo [INFO] Installing required dependencies...
     call venv\Scripts\activate.bat
+    python -m pip install --upgrade pip
     python -m pip install -r requirements.txt
     echo.
-    echo [SUCCESS] Setup complete!
+    echo [SUCCESS] Environment setup complete!
 ) else (
-    echo [INFO] Environment found. Loading ZeroTouch...
+    echo [INFO] Existing environment found. Activating...
     call venv\Scripts\activate.bat
 )
 
-:: Run the launcher
-echo [INFO] Starting ZeroTouch OS...
-python launcher.py
+:: Launch ZeroTouch using the isolated venv python directly
+echo [INFO] Launching ZeroTouch OS...
+if exist "venv\Scripts\python.exe" (
+    venv\Scripts\python.exe launcher.py
+) else (
+    python launcher.py
+)
 
 echo.
-echo [INFO] ZeroTouch has been closed.
+echo [INFO] ZeroTouch session ended.
 pause
