@@ -10,6 +10,37 @@ import threading
 import queue
 import winsound
 
+# Hardware Microphone Control via Windows Core Audio (pycaw)
+try:
+    import comtypes
+    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+    PYCAW_AVAILABLE = True
+except Exception:
+    PYCAW_AVAILABLE = False
+
+def toggle_hardware_microphone_mute():
+    """Toggle the Windows default input microphone mute state directly."""
+    if not PYCAW_AVAILABLE:
+        return None
+    try:
+        # Initialize COM for the calling thread if needed
+        try:
+            comtypes.CoInitialize()
+        except Exception:
+            pass
+        mic = AudioUtilities.GetMicrophone()
+        if not mic:
+            return None
+        interface = mic.Activate(IAudioEndpointVolume._iid_, comtypes.CLSCTX_ALL, None)
+        vol = interface.QueryInterface(IAudioEndpointVolume)
+        is_muted = vol.GetMute()
+        new_state = not is_muted
+        vol.SetMute(new_state, None)
+        return new_state # True = Muted, False = Unmuted
+    except Exception as e:
+        print(f"Mic mute error: {e}")
+        return None
+
 # --- Floating Capsule (Ambient UI) ---
 class FloatingCapsule:
     def __init__(self):
@@ -623,7 +654,7 @@ def main():
                             # Reset the hold timer if the gesture breaks or hand moves
                             palm_start_time = None
                             
-                        # --- "Shush" Instant Mute (Boss Key) ---
+                        # --- "Shush" Instant Microphone Mute (Boss Key) ---
                         # Requires deliberate gesture: enabled in config, index finger at mouth, held steady for 0.5s
                         if config.get('shush_mute', False) and primary_face_center is not None and not gestures_paused:
                             index_tip = primary_landmarks[8]
@@ -639,11 +670,16 @@ def main():
                                 
                                 # Index extended, all other fingers tucked
                                 if index_dist > palm_height * 1.3 and middle_dist < palm_height * 1.05 and is_still:
-                                    cv2.circle(frame, index_px, 15, (0, 0, 255), -1) # Red indicator for mute
+                                    cv2.circle(frame, index_px, 15, (0, 0, 255), -1) # Red indicator for mic mute
                                     if time.time() - last_shush_time > 2.0:
-                                        capsule.show('🔇', 'shush')
-                                        try: pyautogui.press('volumemute')
-                                        except: pass
+                                        new_mic_state = toggle_hardware_microphone_mute()
+                                        if new_mic_state is True: # Muted
+                                            capsule.show('🔇', 'shush')
+                                        elif new_mic_state is False: # Unmuted
+                                            capsule.show('🎙️', 'shush')
+                                        else:
+                                            # Fallback if audio endpoint was unqueryable
+                                            capsule.show('🔇', 'shush')
                                         last_shush_time = time.time()
                                         shush_active = True
                                 else:
