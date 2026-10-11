@@ -49,10 +49,11 @@ class ZeroTouchWidget(ctk.CTk):
             "shoulder_guard": False,
             "typing_lockout": True,
             "gaze_clutch": True,
-            "shush_mute": False
+            "shush_mute": False,
+            "stage_mode": False
         }
         self.load_config()
-        self.geometry("350x740" if self.config.get("show_camera_feed", True) else "350x570")
+        self.geometry("350x770" if self.config.get("show_camera_feed", True) else "350x600")
         self.process = None
 
         # Fonts
@@ -124,6 +125,11 @@ class ZeroTouchWidget(ctk.CTk):
         self.sw5 = ctk.CTkSwitch(self.card, text="Ghost-Mute (Mic Shh Gesture)", font=self.font_secondary, text_color=SOFT_WHITE, 
                                  variable=self.shush_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
         self.sw5.pack(pady=5, padx=16, anchor="w")
+
+        self.stage_var = ctk.BooleanVar(value=self.config.get("stage_mode", False))
+        self.sw6 = ctk.CTkSwitch(self.card, text="Stage / Distance Mode (Wide Range)", font=self.font_secondary, text_color=SOFT_WHITE, 
+                                 variable=self.stage_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
+        self.sw6.pack(pady=5, padx=16, anchor="w")
 
         # Live Vision Preview & Telemetry Subpanel (Embedded Dashboard Feed)
         self.preview_frame = ctk.CTkFrame(self.card, fg_color="#121218", corner_radius=8, border_width=1, border_color="#2A2A38")
@@ -236,16 +242,17 @@ class ZeroTouchWidget(ctk.CTk):
         self.config["typing_lockout"] = self.typing_var.get()
         self.config["gaze_clutch"] = self.gaze_var.get()
         self.config["shush_mute"] = self.shush_var.get()
+        self.config["stage_mode"] = self.stage_var.get()
         
         # Dynamically collapse/expand preview video canvas based on toggle
         if self.show_cam_var.get():
             if not self.preview_canvas.winfo_ismapped():
                 self.preview_canvas.pack(fill="x", padx=6, pady=(0, 6))
-                self.geometry("350x740")
+                self.geometry("350x770")
         else:
             if self.preview_canvas.winfo_ismapped():
                 self.preview_canvas.pack_forget()
-                self.geometry("350x570")
+                self.geometry("350x600")
 
         try:
             with open(CONFIG_FILE, "w") as f:
@@ -312,8 +319,10 @@ class ZeroTouchWidget(ctk.CTk):
                 ctx_colors = {0: COOL_GRAY, 1: CHAMPAGNE_GOLD, 2: "#2ECC71", 3: SLATE_BLUE}
                 self.context_lbl.configure(text=f"MODE: {ctx_names.get(ctx_code, 'AUTO')}", text_color=ctx_colors.get(ctx_code, COOL_GRAY))
 
-                if gaze_engaged:
-                    self.gaze_pill.configure(text="GAZE: ENGAGED", text_color=CHAMPAGNE_GOLD)
+                if gaze_engaged == 2:
+                    self.gaze_pill.configure(text="FOCUS: OFF (STAGE)", text_color=CHAMPAGNE_GOLD)
+                elif gaze_engaged == 1:
+                    self.gaze_pill.configure(text="GAZE: ENGAGED", text_color="#2ECC71")
                 else:
                     self.gaze_pill.configure(text="GAZE: AWAY", text_color="#E74C3C")
 
