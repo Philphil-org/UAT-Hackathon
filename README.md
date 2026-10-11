@@ -115,20 +115,21 @@ ZeroTouch is designed to boot smoothly on **any Windows machine**—even locked-
 
 ### 💻 Option 2: Standard Command Prompt (`cmd.exe`)
 If you prefer running via the standard Windows terminal:
-```cmd
-:: 1. Navigate into the project folder
-cd UAT-Hackathon
 
-:: 2. Run the automated launcher
+**Automated Launcher:**
+```cmd
+cd UAT-Hackathon
 Start_Aero.bat
 ```
-*(Or manual step-by-step:*
+
+**Manual Step-by-Step:**
 ```cmd
+cd UAT-Hackathon
 python -m venv venv
 call venv\Scripts\activate.bat
 pip install -r requirements.txt
 python launcher.py
-```*)*
+```
 
 ---
 
