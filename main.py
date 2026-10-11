@@ -286,8 +286,32 @@ def main():
     shush_active = False
     last_shush_time = 0
     was_hand_present = False
+    
+    last_config_check_time = 0
+    last_config_mtime = 0
+    prev_show_camera = config.get('show_camera_feed', True)
 
     while True:
+        # Live config reload (responds instantly to toggles in launcher)
+        if time.time() - last_config_check_time > 0.2:
+            last_config_check_time = time.time()
+            if os.path.exists("config.json"):
+                try:
+                    mtime = os.path.getmtime("config.json")
+                    if mtime != last_config_mtime:
+                        last_config_mtime = mtime
+                        with open("config.json", "r") as f:
+                            config.update(json.load(f))
+                        
+                        # Live toggle camera debug window
+                        cur_show = config.get('show_camera_feed', True)
+                        if prev_show_camera and not cur_show:
+                            cv2.destroyAllWindows()
+                            cv2.waitKey(1)
+                        prev_show_camera = cur_show
+                except Exception:
+                    pass
+
         success, frame = cap.read()
         if not success:
             print("Failed to grab frame.")
