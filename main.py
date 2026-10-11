@@ -57,14 +57,17 @@ class FloatingCapsule:
     def show(self, text, beep="default"):
         self.q.put(text)
         try:
-            if beep == "shush":
-                winsound.PlaySound("SystemHand", winsound.SND_ALIAS | winsound.SND_ASYNC)
-            elif beep == "tap":
-                winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
-            elif beep == "shield":
-                winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS | winsound.SND_ASYNC)
-            elif beep:
-                winsound.PlaySound("SystemDefault", winsound.SND_ALIAS | winsound.SND_ASYNC)
+            sound_map = {
+                "playpause": "sounds/playpause.wav",
+                "next": "sounds/next.wav",
+                "prev": "sounds/prev.wav",
+                "shush": "sounds/mute.wav",
+                "shield": "sounds/shield.wav",
+                "tap": "sounds/next.wav",
+            }
+            sound_file = sound_map.get(beep)
+            if sound_file and os.path.exists(sound_file):
+                winsound.PlaySound(sound_file, winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception:
             pass
 
@@ -581,7 +584,7 @@ def main():
                                     # --- Trigger Gesture on Threshold Cross ---
                                     if current_time - last_track_swipe_time > 1.0:
                                         if dx > swipe_threshold: # Swiped Right -> Next Track
-                                            capsule.show('⏭', 'tap')
+                                            capsule.show('⏭', 'next')
                                             try: pyautogui.press('nexttrack')
                                             except: pass
                                             last_track_swipe_time = current_time
@@ -589,7 +592,7 @@ def main():
                                             back_swipe_anchor_x = None
                                             back_swipe_anchor_y = None
                                         elif dx < -swipe_threshold: # Swiped Left -> Prev Track
-                                            capsule.show('⏮', 'tap')
+                                            capsule.show('⏮', 'prev')
                                             try: pyautogui.press('prevtrack')
                                             except: pass
                                             last_track_swipe_time = current_time
