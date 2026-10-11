@@ -220,6 +220,13 @@ add_card(s5, Inches(6.8), Inches(1.9), Inches(5.7), Inches(4.8),
           "Open Source: https://github.com/Philphil-org/UAT-Hackathon"],
          C_GOLD)
 
-output_path = 'ZeroTouch_Presentation.pptx'
+output_path = 'ZeroTouch_PitchDeck.pptx'
 prs.save(output_path)
 print(f'Successfully generated clean 5-slide deck: {output_path}')
+
+# Also try to overwrite ZeroTouch_Presentation.pptx if unlocked
+try:
+    prs.save('ZeroTouch_Presentation.pptx')
+    print('Also updated ZeroTouch_Presentation.pptx')
+except Exception as e:
+    print('ZeroTouch_Presentation.pptx currently locked in PowerPoint (ZeroTouch_PitchDeck.pptx ready)')
