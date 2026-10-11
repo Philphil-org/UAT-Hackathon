@@ -346,8 +346,11 @@ def main():
         current_time_ms = int(time.time() * 1000)
         timestamp_ms = current_time_ms - start_time_ms
         
+        results = None
         try:
             # Process the frame for hands and faces
+            results = detector.detect_for_video(mp_image, timestamp_ms)
+            
             # Run face detection if ShoulderGuard OR Gaze-Clutch is enabled
             if config.get('shoulder_guard', True) or config.get('gaze_clutch', True):
                 face_results = face_detector.detect_for_video(mp_image, timestamp_ms)
@@ -786,7 +789,7 @@ def main():
             # Safely catch any timestamp overlapping errors and continue
             pass
                 
-        if not results.hand_landmarks:
+        if not results or not results.hand_landmarks:
             prev_points = None
             hitchhiker_start_x = None
             prev_pinch_dist = None
