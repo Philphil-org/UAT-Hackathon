@@ -5,5 +5,6 @@
     "shoulder_guard": false,
     "typing_lockout": true,
     "gaze_clutch": true,
-    "shush_mute": false
+    "shush_mute": false,
+    "stage_mode": false
 }

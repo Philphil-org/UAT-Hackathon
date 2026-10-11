@@ -316,7 +316,8 @@ def main():
         "shoulder_guard": False,
         "typing_lockout": True,
         "gaze_clutch": True,
-        "shush_mute": False
+        "shush_mute": False,
+        "stage_mode": False
     }
     if os.path.exists("config.json"):
         try:
@@ -325,15 +326,15 @@ def main():
         except Exception as e:
             print(f"Failed to load config: {e}")
 
-    # Setup HandLandmarker using the new Tasks API
+    # Setup HandLandmarker using the new Tasks API (Tuned for distance & desk work)
     base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
     options = vision.HandLandmarkerOptions(
         base_options=base_options,
         running_mode=vision.RunningMode.VIDEO,
         num_hands=2,
-        min_hand_detection_confidence=0.85,
-        min_hand_presence_confidence=0.85,
-        min_tracking_confidence=0.85)
+        min_hand_detection_confidence=0.65,
+        min_hand_presence_confidence=0.65,
+        min_tracking_confidence=0.65)
     
     # Initialize the detector
     detector = vision.HandLandmarker.create_from_options(options)
@@ -523,19 +524,35 @@ def main():
                         max_face_area = area
                         primary_face_center = (x + fw//2, y + fh//2)
                         
+                        # --- Dynamic Distance-Adaptive Engine (Desk vs Stage Mode) ---
+                        # Measure face size relative to screen width:
+                        # Up-close desk: face_ratio ~ 0.22 - 0.35. Distance stage: face_ratio < 0.14
+                        face_ratio = fw / float(w)
+                        is_far_distance = face_ratio < 0.16
+                        stage_active = config.get('stage_mode', False) or (current_context == 'PRESENTATION') or is_far_distance
+
                         # --- Gaze-Clutch™ Head Yaw Telemetry with Smoothing ---
                         if hasattr(detection, 'keypoints') and len(detection.keypoints) >= 3:
                             kp = detection.keypoints
                             r_eye, l_eye, nose = kp[0], kp[1], kp[2]
                             eye_center_x = (r_eye.x + l_eye.x) / 2.0
                             eye_dist = abs(l_eye.x - r_eye.x)
-                            if eye_dist > 0.01:
+                            
+                            # Distance-adaptive yaw threshold & smoothing
+                            # Up close: 0.32. Far away / Stage mode: expands up to 0.50 with heavier smoothing
+                            yaw_threshold = 0.50 if stage_active else 0.32
+                            smoothing_factor = 0.80 if is_far_distance else 0.65
+
+                            if eye_dist > 0.006:
                                 raw_yaw = abs(nose.x - eye_center_x) / eye_dist
-                                # Smooth with Exponential Moving Average to prevent hand clipping spikes
-                                smoothed_yaw = 0.65 * smoothed_yaw + 0.35 * raw_yaw
-                                # Requires a deliberate head turn (>0.32) so looking across large monitors doesn't lock up
-                                is_gaze_engaged = smoothed_yaw <= 0.32
+                                smoothed_yaw = smoothing_factor * smoothed_yaw + (1.0 - smoothing_factor) * raw_yaw
+                                is_gaze_engaged = smoothed_yaw <= yaw_threshold
                                 last_gaze_engaged = is_gaze_engaged
+                            else:
+                                # When eye landmarks are compressed below reliable resolution floor,
+                                # maintain engaged gaze state rather than falsely assuming user looked away
+                                is_gaze_engaged = True
+                                last_gaze_engaged = True
                                     
                 # Draw facial telemetry
                 for detection in face_results.detections:
@@ -544,14 +561,18 @@ def main():
                     box_color = (0, 215, 255) if is_gaze_engaged else (0, 0, 255)
                     cv2.rectangle(frame, (x, y), (x + fw, y + fh), box_color, 2)
                     if config.get('gaze_clutch', True):
-                        gaze_text = "GAZE: ENGAGED" if is_gaze_engaged else "GAZE: LOOKING AWAY"
+                        mode_tag = " [STAGE]" if (config.get('stage_mode', False) or current_context == 'PRESENTATION') else ""
+                        gaze_text = f"GAZE: ENGAGED{mode_tag}" if is_gaze_engaged else f"GAZE: LOOKING AWAY{mode_tag}"
                         cv2.putText(frame, gaze_text, (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 2)
             else:
                 # Face temporarily occluded by hand, dropped frame, or lighting dip
                 if config.get('gaze_clutch', True):
-                    # 1.5-second grace cooldown: if camera struggles to track face while you were engaged,
-                    # don't lock you out—seamlessly maintain your last verified state!
-                    if time.time() - last_face_seen_time < 1.5:
+                    # Distance & Stage Adaptive Grace Cooldown:
+                    # In presentation/stage mode: extend grace cooldown to 3.5s so glancing at slides/audience doesn't drop control.
+                    # At desk: standard 1.8s grace cooldown.
+                    stage_active = config.get('stage_mode', False) or (current_context == 'PRESENTATION')
+                    grace_timeout = 3.5 if stage_active else 1.8
+                    if time.time() - last_face_seen_time < grace_timeout:
                         is_gaze_engaged = last_gaze_engaged
                     else:
                         is_gaze_engaged = False
@@ -616,11 +637,13 @@ def main():
                         wrist_px = (int(wrist.x * w), int(wrist.y * h))
                         face_px = primary_face_center
                         
-                        dist_to_face = ((wrist_px[0] - face_px[0])**2 + (wrist_px[1] - face_px[1])**2)**0.5
-                        face_width = max_face_area**0.5 # Approximate width
+                        # Distance-adaptive arm reach radius:
+                        # At desk: 3.5x face width. When far back or on stage: up to 6.0x face width
+                        is_far = (face_width / float(w)) < 0.16
+                        is_stage = config.get('stage_mode', False) or (current_context == 'PRESENTATION')
+                        max_reach_mult = 6.0 if (is_stage or is_far) else 3.5
                         
-                        # If the hand is more than 3.5x the width of your face away from your face, it's not yours!
-                        if dist_to_face > face_width * 3.5:
+                        if dist_to_face > face_width * max_reach_mult:
                             owns_hand = False
                             cv2.putText(frame, "HAND REJECTED (Too Far)", (wrist_px[0]-80, wrist_px[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                     
