@@ -88,6 +88,18 @@ A background hardware listener monitors physical keyboard keystrokes and mouse c
 
 ---
 
+## 📽️ Hackathon Pitch Deck (4-Minute Presentation)
+
+The official executive presentation deck is included directly in the repository:
+* **Presentation File:** [`ZeroTouch_PitchDeck.pptx`](ZeroTouch_PitchDeck.pptx)
+* **How to Access & View from GitHub:**
+  1. Click on [`ZeroTouch_PitchDeck.pptx`](ZeroTouch_PitchDeck.pptx) in this repository.
+  2. Click the **Download raw file** button (or clone the repository).
+  3. Open with Microsoft PowerPoint, Google Slides, or Apple Keynote.
+  4. Press **F5** to start presentation mode. ZeroTouch automatically detects the presentation window so you can navigate slides using back-of-hand spatial swipes!
+
+---
+
 ## 🚀 1-Click Setup & Launch (Windows)
 
 ### Option A: 1-Click Batch Launcher (Recommended)
