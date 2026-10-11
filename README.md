@@ -100,33 +100,46 @@ The official executive presentation deck is included directly in the repository:
 
 ---
 
-## 🚀 Quick Setup & Launch (No PowerShell Required)
+## 🚀 1-Click Launch & Setup Guide (For Judges & Presenters)
 
-### Method 1: Download ZIP (Direct from Browser - Zero Git / Zero PowerShell)
-1. On GitHub, click the green **`<> Code`** button at the top-right.
-2. Click **`Download ZIP`**.
-3. Extract the ZIP folder anywhere on the presentation machine.
-4. Double-click **`Start_Aero.bat`**.
-   * Runs natively via standard Windows Command Prompt (`cmd.exe`).
-   * No PowerShell execution policies or elevated admin rights required!
-   * Automatically prepares the virtual environment and starts ZeroTouch.
+ZeroTouch is designed to boot smoothly on **any Windows machine**—even locked-down conference room computers with disabled PowerShell policies or custom editor file associations.
 
-### Method 2: Standard Command Prompt (`cmd.exe`)
-If cloning or running manually from standard Windows Command Prompt:
+### 🌟 Option 1: 1-Click Zero-Console Launch (Recommended)
+1. Download or clone this repository:
+   * **Direct ZIP Download:** Click green **`<> Code`** at the top right → **`Download ZIP`** → Extract the folder.
+   * **Or via Git:** `git clone https://github.com/Philphil-org/UAT-Hackathon.git`
+2. Double-click **`ZeroTouch.vbs`** (or **`Start_Aero.bat`**):
+   * **`ZeroTouch.vbs`** runs natively via Windows Script Host (`wscript.exe`), booting the app **with zero lingering terminal windows** and completely bypassing any text editors (like VS Code or Notepad).
+   * First run will automatically build the isolated virtual environment (`venv`) and install all required models silently.
+   * Subsequent runs launch instantly into the executive dark-gold dashboard.
+
+### 💻 Option 2: Standard Command Prompt (`cmd.exe`)
+If you prefer running via the standard Windows terminal:
 ```cmd
-git clone https://github.com/Philphil-org/UAT-Hackathon.git
+:: 1. Navigate into the project folder
 cd UAT-Hackathon
 
-:: Run installer batch directly:
+:: 2. Run the automated launcher
 Start_Aero.bat
 ```
-Or manual CMD execution:
+*(Or manual step-by-step:*
 ```cmd
 python -m venv venv
 call venv\Scripts\activate.bat
 pip install -r requirements.txt
 python launcher.py
-```
+```*)*
+
+---
+
+## 🎮 60-Second Quick Demo Guide for Judges
+
+Once the dashboard appears:
+1. Click **`▶ START ENGINE`** (you'll see the embedded camera feed and live FPS/Luminance telemetry).
+2. **Test Smart Activity Pause:** Type random keys on your keyboard → notice the telemetry pill shows **`SMART PAUSE (TYPING)`**, proving the system rejects accidental movement while working.
+3. **Test Presentation Mode:** Open [`ZeroTouch_PitchDeck.pptx`](ZeroTouch_PitchDeck.pptx) in PowerPoint and press **F5**. Show the back of your hand to the camera and swipe **Right** to advance to the next slide!
+4. **Test Ghost-Mute:** Bring your index finger to your lips ("Shh" gesture) → notice your Windows microphone mutes instantly with acoustic haptic confirmation.
+5. **Test Gaze-Clutch™:** Look away at another monitor or person → notice the HUD immediately clutches to standby (`GAZE: AWAY`), preventing accidental triggers.
 
 ---
 
