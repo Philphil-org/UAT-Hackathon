@@ -52,7 +52,7 @@ def get_active_app_context():
 
         # 2. Meeting Mode (Zoom, MS Teams, Google Meet, Webex, Discord)
         if any(p in lower_proc for p in ['zoom', 'teams', 'webex', 'discord']) or \
-           any(t in lower_title for t in ['meet.google.com', 'zoom meeting', 'microsoft teams', 'webex']):
+           any(t in lower_title for t in ['meet - ', 'meet – ', 'meet: ', 'google meet', 'meet.google.com', 'zoom meeting', 'zoom', 'microsoft teams', 'webex']):
             return 'MEETING', title, pname
 
         # 3. Video & Media Streaming (YouTube, Netflix, Spotify, VLC, PotPlayer)
@@ -907,8 +907,8 @@ def main():
                                 swipe_grace_frames = 0
                                 
                         # --- Dynamic Volume Control (Pinch Slider) ---
-                        # This runs if palm is not active
-                        if not is_palm_open(primary_landmarks, primary_handedness) and not gestures_paused:
+                        # This runs if palm is not active and not in MEETING mode (to prevent collision with Shh / mic mute gesture)
+                        if not is_palm_open(primary_landmarks, primary_handedness) and not gestures_paused and current_context != 'MEETING':
                             if check_pinch_active(primary_landmarks):
                                 if pinch_locked_out:
                                     # We are waiting for them to break the L-Shape pose before allowing another volume change
