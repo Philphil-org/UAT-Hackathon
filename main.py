@@ -18,6 +18,52 @@ try:
 except Exception:
     PYCAW_AVAILABLE = False
 
+try:
+    import win32gui
+    import win32process
+    import psutil
+    WIN32_AVAILABLE = True
+except Exception:
+    WIN32_AVAILABLE = False
+
+def get_active_app_context():
+    """Detect the foreground application context to dynamically map gestures."""
+    if not WIN32_AVAILABLE:
+        return 'DEFAULT', '', ''
+    try:
+        hwnd = win32gui.GetForegroundWindow()
+        if not hwnd:
+            return 'DEFAULT', '', ''
+        title = win32gui.GetWindowText(hwnd) or ''
+        pname = ''
+        try:
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            pname = psutil.Process(pid).name()
+        except Exception:
+            pass
+
+        lower_title = title.lower()
+        lower_proc = pname.lower()
+
+        # 1. Presentation Mode (PowerPoint, Keynote, Google Slides, Acrobat Reader)
+        if any(p in lower_proc for p in ['powerpnt', 'acrobat', 'acrobt', 'foxit']) or \
+           any(t in lower_title for t in ['slides.google.com', 'powerpoint', 'slide show', 'presentation', 'pdf']):
+            return 'PRESENTATION', title, pname
+
+        # 2. Meeting Mode (Zoom, MS Teams, Google Meet, Webex, Discord)
+        if any(p in lower_proc for p in ['zoom', 'teams', 'webex', 'discord']) or \
+           any(t in lower_title for t in ['meet.google.com', 'zoom meeting', 'microsoft teams', 'webex']):
+            return 'MEETING', title, pname
+
+        # 3. Video & Media Streaming (YouTube, Netflix, Spotify, VLC, PotPlayer)
+        if any(t in lower_title for t in ['youtube', 'netflix', 'hulu', 'disney+', 'prime video', 'twitch']) or \
+           any(p in lower_proc for p in ['spotify', 'vlc', 'potplayer', 'wmplayer', 'musicbee']):
+            return 'MEDIA', title, pname
+
+        return 'DEFAULT', title, pname
+    except Exception:
+        return 'DEFAULT', '', ''
+
 def toggle_hardware_microphone_mute():
     """Toggle the Windows default input microphone mute state directly."""
     if not PYCAW_AVAILABLE:
@@ -76,11 +122,16 @@ class FloatingCapsule:
         try:
             msg = self.q.get_nowait()
             self.label.config(text=msg)
+            # Adapt width for text labels (e.g. SLIDE NEXT vs icons)
+            pill_w = max(90, len(msg) * 14 + 30)
+            screen_width = self.root.winfo_screenwidth()
+            x = (screen_width // 2) - (pill_w // 2)
+            self.root.geometry(f"{pill_w}x50+{x}+40")
             self.root.deiconify()
             
             if self.hide_id:
                 self.root.after_cancel(self.hide_id)
-            self.hide_id = self.root.after(1500, self.root.withdraw)
+            self.hide_id = self.root.after(1400, self.root.withdraw)
         except queue.Empty:
             pass
         self.root.after(50, self._check_queue)
@@ -305,16 +356,24 @@ def main():
     except Exception as e:
         print(f"Shared memory init note: {e}")
 
-    cap = cv2.VideoCapture(config['camera_index'])
+    # Open camera with Windows Media Foundation (CAP_MSMF) to leverage Windows Camera Frame Server,
+    # allowing simultaneous camera sharing with Zoom, OBS, and Teams. Fall back to DirectShow if needed.
+    cam_idx = config['camera_index']
+    cap = cv2.VideoCapture(cam_idx, cv2.CAP_MSMF)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(cam_idx, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(cam_idx)
+
     # Force higher resolution (720p)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     
     if not cap.isOpened():
-        print("Error: Could not open webcam.")
+        print(f"Error: Could not open camera {cam_idx}. Camera may be exclusively locked.")
         return
 
-    print("Starting Aero Vision Engine. Press 'q' to quit.")
+    print("Starting Aero Vision Engine (Shared Frame Server enabled). Press 'q' to quit.")
     
     # We need a monotonically increasing timestamp in MS for the video mode
     start_time_ms = int(time.time() * 1000)
@@ -358,6 +417,10 @@ def main():
     last_gaze_engaged = True
     last_face_seen_time = 0
 
+    current_context = 'DEFAULT'
+    last_context_check_time = 0
+    last_known_context = 'DEFAULT'
+
     while True:
         # Live config reload (responds instantly to toggles in launcher)
         if time.time() - last_config_check_time > 0.2:
@@ -378,6 +441,18 @@ def main():
                         prev_popout_window = cur_popout
                 except Exception:
                     pass
+
+        # Poll active foreground app context every 0.4 seconds
+        if time.time() - last_context_check_time > 0.4:
+            last_context_check_time = time.time()
+            ctx, ctx_title, ctx_proc = get_active_app_context()
+            if ctx != current_context:
+                current_context = ctx
+                # Show brief capsule notification on context switch if entering presentation or meeting
+                if current_context == 'PRESENTATION':
+                    capsule.show('📊 SLIDES', beep=None)
+                elif current_context == 'MEETING':
+                    capsule.show('🎥 MEETING', beep=None)
 
         success, frame = cap.read()
         if not success:
@@ -640,13 +715,21 @@ def main():
                                 
                                 # Debounce / Cooldown: Only trigger once every 1.5 seconds
                                 if time.time() - last_palm_time > 1.5:
-                                    capsule.show('⏯', 'playpause')
-                                    
-                                    # Execute the OS-level media command
-                                    try:
-                                        pyautogui.press('playpause')
-                                    except Exception as e:
-                                        print(f"Failed to press media key: {e}")
+                                    if current_context == 'PRESENTATION':
+                                        capsule.show('⬛ BLANK/RESUME', 'playpause')
+                                        try: pyautogui.press('b') # PowerPoint / Google Slides blank/resume toggle
+                                        except: pass
+                                    elif current_context == 'MEETING':
+                                        capsule.show('📹 CAM TOGGLE', 'playpause')
+                                        try:
+                                            # Toggle video in Zoom / Teams (Alt+V)
+                                            pyautogui.hotkey('alt', 'v')
+                                        except: pass
+                                    else:
+                                        capsule.show('⏯', 'playpause')
+                                        try: pyautogui.press('playpause')
+                                        except Exception as e:
+                                            print(f"Failed to press media key: {e}")
                                         
                                     last_palm_time = time.time()
                                     palm_start_time = None # Reset after trigger
@@ -740,18 +823,36 @@ def main():
                                     
                                     # --- Trigger Gesture on Threshold Cross ---
                                     if current_time - last_track_swipe_time > 0.9:
-                                        if dx > swipe_threshold: # Swiped Right -> Next Track
-                                            capsule.show('⏭', 'next')
-                                            try: pyautogui.press('nexttrack')
-                                            except: pass
+                                        if dx > swipe_threshold: # Swiped Right -> Next / Advance
+                                            if current_context == 'PRESENTATION':
+                                                capsule.show('▶ SLIDE NEXT', 'next')
+                                                try: pyautogui.press('right') # PowerPoint / Google Slides / PDF next
+                                                except: pass
+                                            elif current_context == 'MEETING':
+                                                capsule.show('👥 NEXT VIEW', 'next')
+                                                try: pyautogui.press('right')
+                                                except: pass
+                                            else:
+                                                capsule.show('⏭', 'next')
+                                                try: pyautogui.press('nexttrack')
+                                                except: pass
                                             last_track_swipe_time = current_time
                                             back_swipe_locked_out = True
                                             back_swipe_anchor_x = None
                                             back_swipe_anchor_y = None
-                                        elif dx < -swipe_threshold: # Swiped Left -> Prev Track
-                                            capsule.show('⏮', 'prev')
-                                            try: pyautogui.press('prevtrack')
-                                            except: pass
+                                        elif dx < -swipe_threshold: # Swiped Left -> Prev / Go Back
+                                            if current_context == 'PRESENTATION':
+                                                capsule.show('◀ SLIDE PREV', 'prev')
+                                                try: pyautogui.press('left') # PowerPoint / Google Slides / PDF prev
+                                                except: pass
+                                            elif current_context == 'MEETING':
+                                                capsule.show('👥 PREV VIEW', 'prev')
+                                                try: pyautogui.press('left')
+                                                except: pass
+                                            else:
+                                                capsule.show('⏮', 'prev')
+                                                try: pyautogui.press('prevtrack')
+                                                except: pass
                                             last_track_swipe_time = current_time
                                             back_swipe_locked_out = True
                                             back_swipe_anchor_x = None
@@ -903,22 +1004,26 @@ def main():
                     thumb = cv2.resize(frame, (SHM_W, SHM_H), interpolation=cv2.INTER_NEAREST)
                     rgb_thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
                     shm_buf.buf[32:32 + SHM_FRAME_SIZE] = rgb_thumb.tobytes()
-                    # Header: [0]=Active(1), [1]=fps, [2]=lum, [3]=low_light(0/1), [4]=gaze(0/1)
+                    # Header: [0]=Active(1), [1]=fps, [2]=lum, [3]=low_light(0/1), [4]=gaze(0/1), [5]=context(0:Def, 1:Slides, 2:Meet, 3:Media)
+                    ctx_code = 1 if current_context == 'PRESENTATION' else (2 if current_context == 'MEETING' else (3 if current_context == 'MEDIA' else 0))
                     header_bytes = bytearray(32)
                     header_bytes[0] = 1 # feed active
                     header_bytes[1] = min(255, max(0, int(fps)))
                     header_bytes[2] = min(255, max(0, int(avg_luminance)))
                     header_bytes[3] = 1 if low_light_active else 0
                     header_bytes[4] = 1 if is_gaze_engaged else 0
+                    header_bytes[5] = ctx_code
                     shm_buf.buf[:32] = bytes(header_bytes)
                 else:
                     # When debug feed is toggled off, signal inactive so dashboard hides the preview
+                    ctx_code = 1 if current_context == 'PRESENTATION' else (2 if current_context == 'MEETING' else (3 if current_context == 'MEDIA' else 0))
                     header_bytes = bytearray(32)
                     header_bytes[0] = 0 # inactive
                     header_bytes[1] = min(255, max(0, int(fps)))
                     header_bytes[2] = min(255, max(0, int(avg_luminance)))
                     header_bytes[3] = 1 if low_light_active else 0
                     header_bytes[4] = 1 if is_gaze_engaged else 0
+                    header_bytes[5] = ctx_code
                     shm_buf.buf[:32] = bytes(header_bytes)
             except Exception:
                 pass

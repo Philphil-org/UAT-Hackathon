@@ -136,7 +136,10 @@ class ZeroTouchWidget(ctk.CTk):
         self.fps_lbl.pack(side="left")
 
         self.lum_lbl = ctk.CTkLabel(self.telemetry_header, text="LUM: --", font=self.font_telemetry, text_color=COOL_GRAY)
-        self.lum_lbl.pack(side="left", padx=(10, 0))
+        self.lum_lbl.pack(side="left", padx=(8, 0))
+
+        self.context_lbl = ctk.CTkLabel(self.telemetry_header, text="MODE: AUTO", font=self.font_telemetry, text_color=SLATE_BLUE)
+        self.context_lbl.pack(side="left", padx=(8, 0))
 
         self.gaze_pill = ctk.CTkLabel(self.telemetry_header, text="GAZE: STANDBY", font=self.font_telemetry, text_color=COOL_GRAY)
         self.gaze_pill.pack(side="right")
@@ -280,6 +283,7 @@ class ZeroTouchWidget(ctk.CTk):
                 lum = hdr[2]
                 low_light = hdr[3]
                 gaze_engaged = hdr[4]
+                ctx_code = hdr[5]
 
                 # Update Telemetry Labels
                 self.fps_lbl.configure(text=f"FPS: {fps}", text_color="#2ECC71" if fps > 15 else "#E74C3C")
@@ -287,6 +291,11 @@ class ZeroTouchWidget(ctk.CTk):
                 lum_text = f"LUM: {lum} (BOOST)" if low_light else f"LUM: {lum}"
                 lum_color = CHAMPAGNE_GOLD if low_light else COOL_GRAY
                 self.lum_lbl.configure(text=lum_text, text_color=lum_color)
+
+                # Context Mode mapping (0: Media/Default, 1: Slides, 2: Meeting, 3: Media)
+                ctx_names = {0: "MEDIA", 1: "SLIDES", 2: "MEET", 3: "MEDIA"}
+                ctx_colors = {0: COOL_GRAY, 1: CHAMPAGNE_GOLD, 2: "#2ECC71", 3: SLATE_BLUE}
+                self.context_lbl.configure(text=f"MODE: {ctx_names.get(ctx_code, 'AUTO')}", text_color=ctx_colors.get(ctx_code, COOL_GRAY))
 
                 if gaze_engaged:
                     self.gaze_pill.configure(text="GAZE: ENGAGED", text_color=CHAMPAGNE_GOLD)
@@ -332,6 +341,7 @@ class ZeroTouchWidget(ctk.CTk):
         self.stop_btn.configure(state="disabled", fg_color=HARD_GRAPHITE_LIGHT, text_color=SOFT_WHITE)
         self.fps_lbl.configure(text="FPS: --", text_color=COOL_GRAY)
         self.lum_lbl.configure(text="LUM: --", text_color=COOL_GRAY)
+        self.context_lbl.configure(text="MODE: --", text_color=COOL_GRAY)
         self.gaze_pill.configure(text="GAZE: STANDBY", text_color=COOL_GRAY)
         self.preview_canvas.configure(image="", text="ENGINE OFFLINE", text_color=COOL_GRAY)
 
