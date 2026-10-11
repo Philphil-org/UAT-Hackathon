@@ -316,7 +316,7 @@ def main():
         "shoulder_guard": False,
         "typing_lockout": True,
         "gaze_clutch": True,
-        "shush_mute": False,
+        "shush_mute": True,
         "stage_mode": False
     }
     if os.path.exists("config.json"):
@@ -415,6 +415,13 @@ def main():
     
     shush_active = False
     last_shush_time = 0
+    shush_start_time = None
+    cached_mouth_center = None
+    cached_face_center = None
+    cached_face_width = 0
+    last_mouth_seen_time = 0
+    current_title = ""
+    current_proc = ""
     was_hand_present = False
     
     last_config_check_time = 0
@@ -454,6 +461,8 @@ def main():
         if time.time() - last_context_check_time > 0.4:
             last_context_check_time = time.time()
             ctx, ctx_title, ctx_proc = get_active_app_context()
+            current_title = ctx_title
+            current_proc = ctx_proc
             if ctx != current_context:
                 current_context = ctx
                 # Show brief capsule notification on context switch if entering presentation or meeting
@@ -499,16 +508,23 @@ def main():
             # Process the frame for hands and faces
             results = detector.detect_for_video(mp_image, timestamp_ms)
             
-            # Run face detection if ShoulderGuard OR Gaze-Clutch is enabled
-            if config.get('shoulder_guard', True) or config.get('gaze_clutch', True):
+            # Run face detection if ShoulderGuard, Gaze-Clutch, Shush Mute, or Meeting mode is active
+            need_face = (
+                config.get('shoulder_guard', False) or 
+                config.get('gaze_clutch', True) or 
+                config.get('shush_mute', True) or 
+                (current_context == 'MEETING')
+            )
+            if need_face:
                 face_results = face_detector.detect_for_video(mp_image, timestamp_ms)
             else:
                 class EmptyResults: detections = []
                 face_results = EmptyResults()
             
-            # --- ShoulderGuard: Face Tracking & Privacy ---
+            # --- Face Tracking, Mouth Localizer & Privacy Engine ---
             faces_detected = 0
             primary_face_center = None
+            primary_mouth_center = None
             max_face_area = 0
             is_gaze_engaged = True
             stage_active = config.get('stage_mode', False) or (current_context == 'PRESENTATION')
@@ -524,6 +540,19 @@ def main():
                     if area > max_face_area:
                         max_face_area = area
                         primary_face_center = (x + fw//2, y + fh//2)
+                        
+                        # MediaPipe FaceDetector keypoint 3 is mouth center
+                        if hasattr(detection, 'keypoints') and len(detection.keypoints) >= 4:
+                            kp_mouth = detection.keypoints[3]
+                            primary_mouth_center = (int(kp_mouth.x * w), int(kp_mouth.y * h))
+                        else:
+                            primary_mouth_center = (x + fw//2, y + int(fh * 0.72))
+                        
+                        # Cache face & mouth position to survive momentary hand occlusion during "Shh" gesture
+                        cached_mouth_center = primary_mouth_center
+                        cached_face_center = primary_face_center
+                        cached_face_width = fw
+                        last_mouth_seen_time = time.time()
                         
                         # --- Dynamic Distance-Adaptive Engine (Desk vs Stage Mode) ---
                         face_ratio = fw / float(w)
@@ -564,7 +593,13 @@ def main():
                         gaze_text = "GAZE: ENGAGED" if is_gaze_engaged else "GAZE: LOOKING AWAY"
                         cv2.putText(frame, gaze_text, (x, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 2)
             else:
-                # Face temporarily occluded by hand, dropped frame, or presenter looking at screen/audience
+                # Face temporarily occluded by hand (e.g. Shh gesture), dropped frame, or user looking slightly away
+                if time.time() - last_mouth_seen_time < 1.0 and cached_mouth_center is not None:
+                    primary_mouth_center = cached_mouth_center
+                    primary_face_center = cached_face_center
+                    if cached_face_width > 0:
+                        max_face_area = cached_face_width**2
+
                 if stage_active:
                     # In presenter mode, focus mode is turned off—keep gestures active
                     is_gaze_engaged = True
@@ -691,10 +726,10 @@ def main():
                         # If the hand has jittered in the last 0.5 seconds, pause all gesture processing!
                         jitter_paused = time.time() - jitter_cooldown < 0.5
                         
-                        # If the user has typed or clicked in the last 1.8 seconds, pause gestures!
+                        # If the user has typed or clicked in the last 0.7 seconds, pause gestures!
                         activity_paused = False
                         if config.get('typing_lockout', True):
-                            activity_paused = time.time() - last_input_activity_time < 1.8
+                            activity_paused = time.time() - last_input_activity_time < 0.7
                         
                         # If Gaze-Clutch is enabled and user is looking away, pause gestures!
                         # (Focus mode is disabled in presenter / stage mode)
@@ -753,10 +788,22 @@ def main():
                                         except: pass
                                     elif current_context == 'MEETING':
                                         capsule.show('📹 CAM TOGGLE', 'playpause')
+                                        lower_t = current_title.lower()
+                                        lower_p = current_proc.lower()
                                         try:
-                                            # Toggle video in Zoom / Teams (Alt+V)
-                                            pyautogui.hotkey('alt', 'v')
-                                        except: pass
+                                            if any(t in lower_t for t in ['meet - ', 'meet – ', 'meet: ', 'google meet', 'meet.google.com']):
+                                                pyautogui.hotkey('ctrl', 'e') # Google Meet
+                                            elif any(p in lower_p for p in ['teams']) or any(t in lower_t for t in ['teams', 'microsoft teams']):
+                                                pyautogui.hotkey('ctrl', 'shift', 'o') # Microsoft Teams
+                                            elif any(p in lower_p for p in ['zoom']) or 'zoom' in lower_t:
+                                                pyautogui.hotkey('alt', 'v') # Zoom
+                                            elif any(p in lower_p for p in ['webex']) or 'webex' in lower_t:
+                                                pyautogui.hotkey('ctrl', 'shift', 'v') # Webex
+                                            else:
+                                                pyautogui.hotkey('ctrl', 'e')
+                                                pyautogui.hotkey('alt', 'v')
+                                        except Exception as e:
+                                            print(f"Cam toggle error: {e}")
                                     else:
                                         capsule.show('⏯', 'playpause')
                                         try: pyautogui.press('playpause')
@@ -770,38 +817,85 @@ def main():
                             palm_start_time = None
                             
                         # --- "Shush" Instant Microphone Mute (Boss Key) ---
-                        # Requires deliberate gesture: enabled in config, index finger at mouth, held steady for 0.5s
-                        if config.get('shush_mute', False) and primary_face_center is not None and not gestures_paused:
-                            index_tip = primary_landmarks[8]
-                            index_px = (int(index_tip.x * w), int(index_tip.y * h))
-                            dist_to_face = ((index_px[0] - primary_face_center[0])**2 + (index_px[1] - primary_face_center[1])**2)**0.5
+                        # Requires deliberate gesture: index finger held at lips/mouth for 0.35s
+                        shush_allowed = config.get('shush_mute', True) or (current_context == 'MEETING')
+                        target_mouth = primary_mouth_center if primary_mouth_center is not None else (
+                            (primary_face_center[0], primary_face_center[1] + int(max_face_area**0.5 * 0.32)) if primary_face_center else cached_mouth_center
+                        )
+                        
+                        index_tip = primary_landmarks[8]
+                        index_px = (int(index_tip.x * w), int(index_tip.y * h))
+                        
+                        if target_mouth is not None:
+                            dist_to_mouth = ((index_px[0] - target_mouth[0])**2 + (index_px[1] - target_mouth[1])**2)**0.5
+                            face_width = max_face_area**0.5 if max_face_area > 0 else (cached_face_width if cached_face_width > 0 else 100)
+                            shush_threshold = max(65.0, face_width * 0.70)
                             
-                            face_width = max_face_area**0.5
+                            # Finger posture: index extended up, middle/ring tucked
+                            palm_height = get_dist(primary_landmarks[0], primary_landmarks[9])
+                            index_dist = get_dist(primary_landmarks[8], primary_landmarks[0])
+                            middle_dist = get_dist(primary_landmarks[12], primary_landmarks[0])
+                            ring_dist = get_dist(primary_landmarks[16], primary_landmarks[0])
                             
-                            # Tightened proximity requirement: strictly near mouth/nose (0.45x face width)
-                            if dist_to_face < face_width * 0.45:
-                                middle_dist = get_dist(primary_landmarks[12], primary_landmarks[0])
-                                index_dist = get_dist(primary_landmarks[8], primary_landmarks[0])
+                            is_index_extended = index_dist > palm_height * 1.15
+                            is_other_tucked = (middle_dist < palm_height * 1.35) and (ring_dist < palm_height * 1.35)
+                            is_in_zone = dist_to_mouth < shush_threshold
+                            
+                            # --- Visual Debug Overlays on Frame ---
+                            # Target reticle at mouth:
+                            reticle_col = (0, 255, 0) if is_in_zone else (0, 215, 255)
+                            cv2.circle(frame, target_mouth, 6, reticle_col, -1)
+                            cv2.circle(frame, target_mouth, int(shush_threshold), reticle_col if is_in_zone else (80, 80, 120), 1)
+                            cv2.putText(frame, "LIPS", (target_mouth[0] - 15, target_mouth[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, reticle_col, 1)
+                            
+                            # Visual guide line from index tip to mouth:
+                            guide_col = (0, 255, 0) if is_in_zone else (160, 160, 160)
+                            cv2.line(frame, index_px, target_mouth, guide_col, 2 if is_in_zone else 1)
+                            dist_lbl = f"SHH: {int(dist_to_mouth)}px" + (" [IN ZONE]" if is_in_zone else "")
+                            cv2.putText(frame, dist_lbl, (index_px[0] + 15, index_px[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, guide_col, 1)
+                            
+                            if shush_allowed and is_in_zone and is_index_extended and is_other_tucked and not jitter_paused:
+                                if shush_start_time is None:
+                                    shush_start_time = time.time()
+                                hold_dur = time.time() - shush_start_time
+                                progress = min(1.0, hold_dur / 0.35)
+                                end_angle = int(360 * progress)
                                 
-                                # Index extended, all other fingers tucked
-                                if index_dist > palm_height * 1.3 and middle_dist < palm_height * 1.05 and is_still:
-                                    cv2.circle(frame, index_px, 15, (0, 0, 255), -1) # Red indicator for mic mute
-                                    if time.time() - last_shush_time > 2.0:
+                                # Animated circular loading ring at index tip
+                                cv2.ellipse(frame, index_px, (25, 25), -90, 0, end_angle, (0, 215, 255), 4)
+                                cv2.putText(frame, f"HOLD {int(progress*100)}%", (index_px[0] - 30, index_px[1] - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 215, 255), 2)
+                                
+                                if progress >= 1.0:
+                                    cv2.circle(frame, index_px, 30, (0, 255, 0), -1)
+                                    if time.time() - last_shush_time > 1.8:
                                         new_mic_state = toggle_hardware_microphone_mute()
-                                        if new_mic_state is True: # Muted
+                                        
+                                        # Also sync in-app meeting microphone mute shortcuts
+                                        lower_t = current_title.lower()
+                                        lower_p = current_proc.lower()
+                                        try:
+                                            if any(t in lower_t for t in ['meet', 'google meet']):
+                                                pyautogui.hotkey('ctrl', 'd') # Google Meet
+                                            elif any(p in lower_p for p in ['teams']) or 'teams' in lower_t:
+                                                pyautogui.hotkey('ctrl', 'shift', 'm') # Teams
+                                            elif any(p in lower_p for p in ['zoom']) or 'zoom' in lower_t:
+                                                pyautogui.hotkey('alt', 'a') # Zoom
+                                        except Exception:
+                                            pass
+                                        
+                                        if new_mic_state is True:
                                             capsule.show('🔇', 'shush')
-                                        elif new_mic_state is False: # Unmuted
-                                            capsule.show('🎙️', 'shush')
                                         else:
-                                            # Fallback if audio endpoint was unqueryable
-                                            capsule.show('🔇', 'shush')
+                                            capsule.show('🎙️', 'shush')
+                                            
                                         last_shush_time = time.time()
+                                        shush_start_time = None
                                         shush_active = True
-                                else:
-                                    shush_active = False
                             else:
+                                shush_start_time = None
                                 shush_active = False
                         else:
+                            shush_start_time = None
                             shush_active = False
     
                         # --- Back-of-Hand Swipe (Next/Prev Track) ---
@@ -861,9 +955,24 @@ def main():
                                                 try: pyautogui.press('right') # PowerPoint / Google Slides / PDF next
                                                 except: pass
                                             elif current_context == 'MEETING':
-                                                capsule.show('👥 NEXT VIEW', 'next')
-                                                try: pyautogui.press('right')
-                                                except: pass
+                                                lower_t = current_title.lower()
+                                                lower_p = current_proc.lower()
+                                                if any(t in lower_t for t in ['meet', 'google meet']):
+                                                    capsule.show('👥 PEOPLE', 'next')
+                                                    try: pyautogui.hotkey('ctrl', 'alt', 'p')
+                                                    except: pass
+                                                elif any(p in lower_p for p in ['teams']) or 'teams' in lower_t:
+                                                    capsule.show('👥 PEOPLE', 'next')
+                                                    try: pyautogui.hotkey('ctrl', 'shift', 'p')
+                                                    except: pass
+                                                elif any(p in lower_p for p in ['zoom']) or 'zoom' in lower_t:
+                                                    capsule.show('👥 GALLERY', 'next')
+                                                    try: pyautogui.press('pagedown')
+                                                    except: pass
+                                                else:
+                                                    capsule.show('👥 PEOPLE', 'next')
+                                                    try: pyautogui.press('right')
+                                                    except: pass
                                             else:
                                                 capsule.show('⏭', 'next')
                                                 try: pyautogui.press('nexttrack')
@@ -878,9 +987,24 @@ def main():
                                                 try: pyautogui.press('left') # PowerPoint / Google Slides / PDF prev
                                                 except: pass
                                             elif current_context == 'MEETING':
-                                                capsule.show('👥 PREV VIEW', 'prev')
-                                                try: pyautogui.press('left')
-                                                except: pass
+                                                lower_t = current_title.lower()
+                                                lower_p = current_proc.lower()
+                                                if any(t in lower_t for t in ['meet', 'google meet']):
+                                                    capsule.show('✋ HAND RAISE', 'prev')
+                                                    try: pyautogui.hotkey('ctrl', 'alt', 'h')
+                                                    except: pass
+                                                elif any(p in lower_p for p in ['teams']) or 'teams' in lower_t:
+                                                    capsule.show('✋ HAND RAISE', 'prev')
+                                                    try: pyautogui.hotkey('ctrl', 'shift', 'k')
+                                                    except: pass
+                                                elif any(p in lower_p for p in ['zoom']) or 'zoom' in lower_t:
+                                                    capsule.show('✋ HAND RAISE', 'prev')
+                                                    try: pyautogui.hotkey('alt', 'y')
+                                                    except: pass
+                                                else:
+                                                    capsule.show('✋ HAND RAISE', 'prev')
+                                                    try: pyautogui.press('left')
+                                                    except: pass
                                             else:
                                                 capsule.show('⏮', 'prev')
                                                 try: pyautogui.press('prevtrack')
@@ -1028,6 +1152,18 @@ def main():
         lum_text = f"LIGHT BOOST: ACTIVE (LUM {int(avg_luminance)})" if low_light_active else f"LIGHT: NORMAL (LUM {int(avg_luminance)})"
         lum_color = (0, 215, 255) if low_light_active else (180, 180, 180)
         cv2.putText(frame, lum_text, (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.55, lum_color, 2)
+        
+        # Mode & Shush Status Debug Telemetry
+        mode_color = (212, 175, 106) if current_context == 'MEETING' else ((0, 215, 255) if current_context == 'PRESENTATION' else (180, 180, 180))
+        cv2.putText(frame, f"MODE: [{current_context}]", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.55, mode_color, 2)
+        
+        shush_on = config.get('shush_mute', True) or (current_context == 'MEETING')
+        if not shush_on:
+            cv2.putText(frame, "MIC SHH: DISABLED", (20, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 120, 120), 2)
+        elif shush_start_time is not None:
+            cv2.putText(frame, "MIC SHH: [HOLDING TO MUTE...]", (20, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        else:
+            cv2.putText(frame, "MIC SHH: READY (FINGER TO LIPS)", (20, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 215, 255), 2)
     
         # Stream downscaled preview & live telemetry to Dashboard Shared Memory
         if shm_buf is not None:

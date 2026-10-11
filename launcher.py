@@ -64,7 +64,7 @@ class ZeroTouchWidget(ctk.CTk):
             "shoulder_guard": False,
             "typing_lockout": True,
             "gaze_clutch": True,
-            "shush_mute": False,
+            "shush_mute": True,
             "stage_mode": False
         }
         self.load_config()
@@ -148,7 +148,7 @@ class ZeroTouchWidget(ctk.CTk):
                                  variable=self.gaze_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
         self.sw4.pack(pady=5, padx=16, anchor="w")
 
-        self.shush_var = ctk.BooleanVar(value=self.config.get("shush_mute", False))
+        self.shush_var = ctk.BooleanVar(value=self.config.get("shush_mute", True))
         self.sw5 = ctk.CTkSwitch(self.card, text="Ghost-Mute (Mic Shh Gesture)", font=self.font_secondary, text_color=SOFT_WHITE, 
                                  variable=self.shush_var, progress_color=CHAMPAGNE_GOLD, button_color=SOFT_WHITE, button_hover_color=COOL_GRAY, command=self.save_config)
         self.sw5.pack(pady=5, padx=16, anchor="w")
