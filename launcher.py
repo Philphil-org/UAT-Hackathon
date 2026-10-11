@@ -37,9 +37,24 @@ class ZeroTouchWidget(ctk.CTk):
         self.configure(fg_color=MIDNIGHT_INK)
         self.resizable(False, False)
         
+        # Set Windows Taskbar AppUserModelID so Windows taskbar groups and shows custom icon
+        try:
+            import ctypes
+            myappid = 'uat.zerotouch.spatialcompanion.1.0'
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass
+
         # High DPI Support
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
+
+        # Set Window and Taskbar Icon
+        if os.path.exists("zerotouch.ico"):
+            try:
+                self.iconbitmap("zerotouch.ico")
+            except Exception:
+                pass
         
         # Load Config
         self.config = {
@@ -66,12 +81,24 @@ class ZeroTouchWidget(ctk.CTk):
         self.container = ctk.CTkFrame(self, fg_color=MIDNIGHT_INK, corner_radius=0)
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Header
-        self.brand_lbl = ctk.CTkLabel(self.container, text="ZeroTouch", font=self.font_brand, text_color=CHAMPAGNE_GOLD)
-        self.brand_lbl.pack(pady=(5, 0), anchor="center")
+        # Header with Brand Emblem
+        self.header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.header_frame.pack(pady=(2, 0), anchor="center")
+
+        if os.path.exists("zerotouch.png"):
+            try:
+                logo_pil = Image.open("zerotouch.png").resize((32, 32), Image.Resampling.LANCZOS)
+                self.logo_ctk = ctk.CTkImage(light_image=logo_pil, dark_image=logo_pil, size=(32, 32))
+                self.logo_lbl = ctk.CTkLabel(self.header_frame, image=self.logo_ctk, text="")
+                self.logo_lbl.pack(side="left", padx=(0, 8))
+            except Exception:
+                pass
+
+        self.brand_lbl = ctk.CTkLabel(self.header_frame, text="ZeroTouch", font=self.font_brand, text_color=CHAMPAGNE_GOLD)
+        self.brand_lbl.pack(side="left")
         
         self.sub_lbl = ctk.CTkLabel(self.container, text="SPATIAL OS COMPANION", font=self.font_telemetry, text_color=COOL_GRAY)
-        self.sub_lbl.pack(pady=(0, 16), anchor="center")
+        self.sub_lbl.pack(pady=(0, 14), anchor="center")
 
         # Hero Action Button (Start / Stop)
         self.btn_frame = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -371,7 +398,13 @@ class ZeroTouchWidget(ctk.CTk):
 
     # --- System Tray Logic ---
     def setup_tray(self):
-        tray_image = create_tray_icon_image()
+        if os.path.exists("zerotouch.png"):
+            try:
+                tray_image = Image.open("zerotouch.png")
+            except Exception:
+                tray_image = create_tray_icon_image()
+        else:
+            tray_image = create_tray_icon_image()
         menu = (
             item('Show ZeroTouch', self.show_window, default=True),
             item('Toggle Engine', self.toggle_engine_from_tray),
