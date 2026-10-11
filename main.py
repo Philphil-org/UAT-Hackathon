@@ -133,6 +133,34 @@ def is_palm_open(hand_landmarks, handedness):
             
     return True
 
+def is_back_of_hand_open(hand_landmarks, handedness):
+    """Check if the hand is in an open pose with the BACK OF THE HAND facing the camera."""
+    wrist = hand_landmarks[0]
+    palm_height = get_dist(wrist, hand_landmarks[9])
+    
+    # 1. Main fingertips must be extended (forgiving threshold for natural curve)
+    for tip in [8, 12, 16, 20]:
+        if get_dist(hand_landmarks[tip], wrist) < palm_height * 1.05:
+            return False
+            
+    # 2. Fingers must be somewhat spread
+    index_tip = hand_landmarks[8]
+    pinky_tip = hand_landmarks[20]
+    if get_dist(index_tip, pinky_tip) < palm_height * 0.45:
+        return False
+        
+    # 3. Ensure BACK of the hand is facing the camera
+    # Due to mirrored camera: Left (physical Right) has thumb_tip.x > pinky_tip.x for back of hand
+    thumb_tip = hand_landmarks[4]
+    if handedness == "Left":
+        if thumb_tip.x <= pinky_tip.x:
+            return False
+    else:
+        if thumb_tip.x >= pinky_tip.x:
+            return False
+            
+    return True
+
 def get_dist(lm1, lm2):
     return ((lm1.x - lm2.x)**2 + (lm1.y - lm2.y)**2)**0.5
 
@@ -231,9 +259,10 @@ def main():
     palm_start_time = None
     prev_points = None
     
-    swipe_start_x = None
-    swipe_start_y = None
-    swipe_start_time = 0
+    back_swipe_anchor_x = None
+    back_swipe_anchor_y = None
+    back_swipe_start_time = 0
+    last_track_swipe_time = 0
     
     prev_pinch_dist = None
     pinch_start_time = None
@@ -502,60 +531,65 @@ def main():
                             else:
                                 shush_active = False
     
-                        # --- Grab & Slide (Next/Prev Track) ---
-                        # Pinch Middle+Thumb and swipe Left/Right
-                        if not is_palm_open(primary_landmarks, primary_handedness) and not gestures_paused:
+                        # --- Back-of-Hand Swipe (Next/Prev Track) ---
+                        # Open hand with the BACK of the hand facing the camera, swiped Left/Right
+                        if is_back_of_hand_open(primary_landmarks, primary_handedness) and not gestures_paused:
                             wrist = primary_landmarks[0]
-                            thumb = primary_landmarks[4]
-                            middle = primary_landmarks[12]
-                            palm_height = get_dist(wrist, primary_landmarks[9])
                             current_time = time.time()
                             
-                            middle_dist = get_dist3d(thumb, middle)
-                            if middle_dist < palm_height * 0.12:
-                                if swipe_start_x is None:
-                                    swipe_start_x = wrist.x
-                                    swipe_start_y = wrist.y
-                                    swipe_start_time = current_time
-                                else:
-                                    dx = wrist.x - swipe_start_x
-                                    
-                                    # --- Visual Slider in Debug Feed ---
-                                    start_px = (int(swipe_start_x * w), int(swipe_start_y * h))
-                                    curr_px = (int(wrist.x * w), int(wrist.y * h))
-                                    left_thresh = (int((swipe_start_x - 0.10) * w), int(swipe_start_y * h))
-                                    right_thresh = (int((swipe_start_x + 0.10) * w), int(swipe_start_y * h))
-                                    
-                                    # Draw the anchor and the horizontal rail
-                                    cv2.line(frame, left_thresh, right_thresh, (100, 100, 100), 2)
-                                    cv2.circle(frame, left_thresh, 8, (100, 100, 100), -1)
-                                    cv2.circle(frame, right_thresh, 8, (100, 100, 100), -1)
-                                    cv2.circle(frame, start_px, 12, (0, 215, 255), -1) # Gold anchor
-                                    
-                                    # Color changes to Green if threshold is crossed
-                                    line_color = (0, 215, 255)
-                                    if dx > 0.10 or dx < -0.10:
-                                        line_color = (0, 255, 0)
-                                        
-                                    cv2.line(frame, start_px, curr_px, line_color, 4)
-                                    cv2.circle(frame, curr_px, 15, line_color, -1)
-                                    
-                                    # --- Action Triggers ---
-                                    if current_time - swipe_start_time < 1.0:
-                                        if dx > 0.10: # Swiped Right
-                                            capsule.show('⏭', 'tap')
-                                            try: pyautogui.press('nexttrack') 
-                                            except: pass
-                                            swipe_start_x = None
-                                            swipe_start_y = None
-                                        elif dx < -0.10: # Swiped Left
-                                            capsule.show('⏮', 'tap')
-                                            try: pyautogui.press('prevtrack') 
-                                            except: pass
-                                            swipe_start_x = None
+                            if back_swipe_anchor_x is None:
+                                back_swipe_anchor_x = wrist.x
+                                back_swipe_anchor_y = wrist.y
+                                back_swipe_start_time = current_time
                             else:
-                                swipe_start_x = None
-                                swipe_start_y = None
+                                elapsed = current_time - back_swipe_start_time
+                                dx = wrist.x - back_swipe_anchor_x
+                                
+                                # --- Visual Guide in Debug Window ---
+                                anchor_px = (int(back_swipe_anchor_x * w), int(back_swipe_anchor_y * h))
+                                curr_px = (int(wrist.x * w), int(wrist.y * h))
+                                left_bound = (int((back_swipe_anchor_x - 0.08) * w), int(back_swipe_anchor_y * h))
+                                right_bound = (int((back_swipe_anchor_x + 0.08) * w), int(back_swipe_anchor_y * h))
+                                
+                                # Draw rail and bounds
+                                cv2.line(frame, left_bound, right_bound, (80, 80, 80), 2)
+                                cv2.circle(frame, left_bound, 8, (0, 165, 255), -1)   # Orange: Prev
+                                cv2.circle(frame, right_bound, 8, (0, 255, 0), -1)   # Green: Next
+                                cv2.circle(frame, anchor_px, 6, (255, 255, 255), -1) # Anchor
+                                
+                                line_col = (0, 215, 255)
+                                if dx > 0.08 or dx < -0.08:
+                                    line_col = (0, 255, 0)
+                                cv2.line(frame, anchor_px, curr_px, line_col, 3)
+                                cv2.circle(frame, curr_px, 12, line_col, -1)
+                                cv2.putText(frame, "BACK-HAND SWIPE", (wrist_x - 80, wrist_y + 35),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 215, 255), 2)
+                                
+                                # --- Trigger Gesture on Quick Swipe ---
+                                if elapsed < 0.8 and (current_time - last_track_swipe_time > 0.8):
+                                    if dx > 0.08: # Swiped Right -> Next Track
+                                        capsule.show('⏭', 'tap')
+                                        try: pyautogui.press('nexttrack')
+                                        except: pass
+                                        last_track_swipe_time = current_time
+                                        back_swipe_anchor_x = None
+                                        back_swipe_anchor_y = None
+                                    elif dx < -0.08: # Swiped Left -> Prev Track
+                                        capsule.show('⏮', 'tap')
+                                        try: pyautogui.press('prevtrack')
+                                        except: pass
+                                        last_track_swipe_time = current_time
+                                        back_swipe_anchor_x = None
+                                        back_swipe_anchor_y = None
+                                        
+                                # If held steady for 0.8s without swiping, slide anchor to current position
+                                if elapsed >= 0.8:
+                                    back_swipe_anchor_x = wrist.x
+                                    back_swipe_anchor_y = wrist.y
+                                    back_swipe_start_time = current_time
+                        else:
+                            back_swipe_anchor_x = None
+                            back_swipe_anchor_y = None
                                 
                         # --- Dynamic Volume Control (Pinch Slider) ---
                         # This runs if palm is not active
@@ -665,6 +699,8 @@ def main():
                 prev_index_tip = None
                 pinch_start_time = None
                 volume_active = False
+                back_swipe_anchor_x = None
+                back_swipe_anchor_y = None
     
             # Calculate FPS
             curr_time = time.time()
