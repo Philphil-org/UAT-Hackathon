@@ -132,14 +132,24 @@ python launcher.py
 
 ---
 
-## 🎮 60-Second Quick Demo Guide for Judges
+## 🎮 60-Second Live Demo Walkthrough (For Judges)
 
-Once the dashboard appears:
-1. Click **`▶ START ENGINE`** (you'll see the embedded camera feed and live FPS/Luminance telemetry).
-2. **Test Smart Activity Pause:** Type random keys on your keyboard → notice the telemetry pill shows **`SMART PAUSE (TYPING)`**, proving the system rejects accidental movement while working.
-3. **Test Presentation Mode:** Open [`ZeroTouch_PitchDeck.pptx`](ZeroTouch_PitchDeck.pptx) in PowerPoint and press **F5**. Show the back of your hand to the camera and swipe **Right** to advance to the next slide!
-4. **Test Ghost-Mute:** Bring your index finger to your lips ("Shh" gesture) → notice your Windows microphone mutes instantly with acoustic haptic confirmation.
-5. **Test Gaze-Clutch™:** Look away at another monitor or person → notice the HUD immediately clutches to standby (`GAZE: AWAY`), preventing accidental triggers.
+Once the dashboard opens:
+
+1. **Start the Engine:**  
+   Click **`▶ START ENGINE`**. The live camera feed and telemetry indicators (FPS, Lum, Mode, Gaze) will initialize.
+
+2. **Test Smart Activity Lockout:**  
+   Type any keys on your physical keyboard. Notice the telemetry pill instantly displays **`SMART PAUSE (TYPING)`**, proving gestures sleep while you work.
+
+3. **Test Presentation Mode:**  
+   Open [`ZeroTouch_PitchDeck.pptx`](ZeroTouch_PitchDeck.pptx) in PowerPoint and press **F5**. Show the back of your hand to the camera and swipe **Right** to advance to the next slide!
+
+4. **Test Ghost-Mute (Boss Key):**  
+   Bring your index finger to your lips ("Shh" gesture). Your Windows microphone will mute instantly via hardware Core Audio, confirmed by an acoustic haptic chime.
+
+5. **Test Gaze-Clutch™:**  
+   Glance away at another screen. The system immediately clutches to standby (**`GAZE: AWAY`**), preventing accidental triggers.
 
 ---
 
