@@ -470,6 +470,10 @@ def main():
                     capsule.show('📊 SLIDES', beep=None)
                 elif current_context == 'MEETING':
                     capsule.show('🎥 MEETING', beep=None)
+                    volume_active = False
+                    pinch_start_time = None
+                    prev_pinch_dist = None
+                    pinch_locked_out = False
 
         success, frame = cap.read()
         if not success:
