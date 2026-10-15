@@ -14,7 +14,7 @@ import winsound
 # Hardware Microphone Control via Windows Core Audio (pycaw)
 try:
     import comtypes
-    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume, IAudioMeterInformation
     PYCAW_AVAILABLE = True
 except Exception:
     PYCAW_AVAILABLE = False
@@ -87,6 +87,76 @@ def toggle_hardware_microphone_mute():
     except Exception as e:
         print(f"Mic mute error: {e}")
         return None
+
+class MediaStateTracker:
+    """Tracks active Windows audio playback state to prevent media gestures when nothing is playing."""
+    def __init__(self):
+        self.last_check_time = 0
+        self.is_playing = False
+        self.last_sound_time = 0
+        self.meter = None
+        self._init_meter()
+
+    def _init_meter(self):
+        if not PYCAW_AVAILABLE:
+            return
+        try:
+            comtypes.CoInitialize()
+        except Exception:
+            pass
+        try:
+            device = AudioUtilities.GetSpeakers()
+            if device and hasattr(device, '_dev') and device._dev:
+                interface = device._dev.Activate(IAudioMeterInformation._iid_, comtypes.CLSCTX_ALL, None)
+                self.meter = interface.QueryInterface(IAudioMeterInformation)
+        except Exception:
+            self.meter = None
+
+    def is_media_active(self):
+        """Check if any audio stream is actively playing sound or in active session state."""
+        if not PYCAW_AVAILABLE:
+            return True # Fallback if audio API is not available
+        now = time.time()
+
+        # 1. Fast path: check hardware speaker peak audio meter (~0.09ms)
+        try:
+            if self.meter is None:
+                self._init_meter()
+            if self.meter:
+                peak = self.meter.GetPeakValue()
+                if peak > 0.0005:
+                    self.last_sound_time = now
+                    self.is_playing = True
+                    return True
+        except Exception:
+            self.meter = None
+
+        # 2. Bridge natural song quiet bars / inter-track silences (1.8s buffer)
+        if now - self.last_sound_time < 1.8:
+            self.is_playing = True
+            return True
+
+        # 3. Check active audio sessions every 0.35s (checks if an app has an active playback session)
+        if now - self.last_check_time > 0.35:
+            self.last_check_time = now
+            try:
+                sessions = AudioUtilities.GetAllSessions()
+                any_active = False
+                for s in sessions:
+                    if s.State == 1: # AudioSessionStateActive
+                        pname = s.Process.name().lower() if s.Process else ''
+                        if pname != 'system':
+                            any_active = True
+                            break
+                if any_active:
+                    self.last_sound_time = now
+                    self.is_playing = True
+                    return True
+            except Exception:
+                pass
+
+        self.is_playing = False
+        return False
 
 # --- Floating Capsule (Ambient UI) ---
 class FloatingCapsule:
@@ -469,6 +539,9 @@ def main():
     last_context_check_time = 0
     last_known_context = 'DEFAULT'
 
+    media_tracker = MediaStateTracker()
+    media_playing = False
+
     while True:
         # Live config reload (responds instantly to toggles in launcher)
         if time.time() - last_config_check_time > 0.2:
@@ -512,6 +585,9 @@ def main():
         if not success:
             print("Failed to grab frame.")
             break
+
+        # Check active system media audio playback state
+        media_playing = media_tracker.is_media_active()
 
         # Flip the frame for a selfie-view
         frame = cv2.flip(frame, 1)
@@ -602,7 +678,7 @@ def main():
                             is_gaze_engaged = True
                             last_gaze_engaged = True
                         else:
-                            # --- Standard Gaze-Clutch™ Head Yaw Telemetry with Smoothing (Desk Mode) ---
+                            # --- Strict Gaze-Clutch™ Head Yaw & Pitch Telemetry (Desk Mode) ---
                             if hasattr(detection, 'keypoints') and len(detection.keypoints) >= 3:
                                 kp = detection.keypoints
                                 r_eye, l_eye, nose = kp[0], kp[1], kp[2]
@@ -610,9 +686,20 @@ def main():
                                 eye_dist = abs(l_eye.x - r_eye.x)
                                 
                                 if eye_dist > 0.008:
+                                    # Horizontal yaw: nose centering relative to eye line
                                     raw_yaw = abs(nose.x - eye_center_x) / eye_dist
-                                    smoothed_yaw = 0.65 * smoothed_yaw + 0.35 * raw_yaw
-                                    is_gaze_engaged = smoothed_yaw <= 0.32
+                                    # Snappier smoothing (favors immediate head turn)
+                                    smoothed_yaw = 0.35 * smoothed_yaw + 0.65 * raw_yaw
+                                    # Strict yaw: must be within ~18° of screen center (tightened from 0.32)
+                                    yaw_engaged = smoothed_yaw <= 0.20
+                                    
+                                    # Vertical pitch: nose vertical offset relative to eyes
+                                    # Rejects looking down at keyboard/phone or tilting head up away from screen
+                                    eye_center_y = (r_eye.y + l_eye.y) / 2.0
+                                    pitch_ratio = (nose.y - eye_center_y) / eye_dist
+                                    pitch_engaged = (0.24 <= pitch_ratio <= 0.64)
+                                    
+                                    is_gaze_engaged = yaw_engaged and pitch_engaged
                                     last_gaze_engaged = is_gaze_engaged
                                 else:
                                     is_gaze_engaged = True
@@ -641,8 +728,8 @@ def main():
                     # In presenter mode, focus mode is turned off—keep gestures active
                     is_gaze_engaged = True
                 elif config.get('gaze_clutch', True):
-                    # 1.8-second grace cooldown for desk work
-                    if time.time() - last_face_seen_time < 1.8:
+                    # Fast 0.45-second grace cooldown for desk work (tightened from 1.8s)
+                    if time.time() - last_face_seen_time < 0.45:
                         is_gaze_engaged = last_gaze_engaged
                     else:
                         is_gaze_engaged = False
@@ -936,8 +1023,17 @@ def main():
                             shush_active = False
     
                         # --- Back-of-Hand Swipe (Next/Prev Track) ---
+                        # In Media or Default mode, skip only activates if media is actively playing
+                        swipe_allowed = True
+                        if current_context in ['MEDIA', 'DEFAULT'] and not media_playing:
+                            swipe_allowed = False
+                            if back_swipe_anchor_x is not None:
+                                back_swipe_anchor_x = None
+                                back_swipe_anchor_y = None
+                                swipe_grace_frames = 0
+
                         # Open hand with the BACK of the hand facing the camera and held UPRIGHT, swiped Left/Right
-                        if is_back_of_hand_open(primary_landmarks, primary_handedness) and not gestures_paused:
+                        if is_back_of_hand_open(primary_landmarks, primary_handedness) and not gestures_paused and swipe_allowed:
                             swipe_grace_frames = 0
                             # Use Landmark 9 (Middle MCP / palm center) so wrist flexing/tilting doesn't skew motion
                             hand_ref = primary_landmarks[9]
@@ -1068,8 +1164,13 @@ def main():
                                 swipe_grace_frames = 0
                                 
                         # --- Dynamic Volume Control (Pinch Slider) ---
-                        # This runs if palm is not active and not in MEETING mode (to prevent collision with Shh / mic mute gesture)
-                        if not is_palm_open(primary_landmarks, primary_handedness) and not gestures_paused and current_context != 'MEETING':
+                        # In Media or Default mode, volume control only activates if media is actively playing
+                        volume_allowed = True
+                        if current_context in ['MEDIA', 'DEFAULT'] and not media_playing:
+                            volume_allowed = False
+
+                        # This runs if palm is not active, not in MEETING mode, and volume is allowed
+                        if not is_palm_open(primary_landmarks, primary_handedness) and not gestures_paused and current_context != 'MEETING' and volume_allowed:
                             if check_pinch_active(primary_landmarks):
                                 if pinch_locked_out:
                                     # We are waiting for them to break the L-Shape pose before allowing another volume change
@@ -1194,13 +1295,22 @@ def main():
         mode_color = (212, 175, 106) if current_context == 'MEETING' else ((0, 215, 255) if current_context == 'PRESENTATION' else (180, 180, 180))
         cv2.putText(frame, f"MODE: [{current_context}]", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.55, mode_color, 2)
         
+        # Media Active Status Telemetry
+        if current_context in ['MEDIA', 'DEFAULT']:
+            media_lbl = "MEDIA: PLAYING" if media_playing else "MEDIA: IDLE/PAUSED (SKIP/VOL SLEEP)"
+            media_col = (0, 255, 0) if media_playing else (140, 140, 140)
+            cv2.putText(frame, media_lbl, (20, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, media_col, 2)
+            shush_y = 150
+        else:
+            shush_y = 125
+
         shush_on = config.get('shush_mute', True) or (current_context == 'MEETING')
         if not shush_on:
-            cv2.putText(frame, "MIC SHH: DISABLED", (20, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 120, 120), 2)
+            cv2.putText(frame, "MIC SHH: DISABLED", (20, shush_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 120, 120), 2)
         elif shush_start_time is not None:
-            cv2.putText(frame, "MIC SHH: [HOLDING TO MUTE...]", (20, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(frame, "MIC SHH: [HOLDING TO MUTE...]", (20, shush_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         else:
-            cv2.putText(frame, "MIC SHH: READY (FINGER TO LIPS)", (20, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 215, 255), 2)
+            cv2.putText(frame, "MIC SHH: READY (FINGER TO LIPS)", (20, shush_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 215, 255), 2)
     
         # Stream downscaled preview & live telemetry to Dashboard Shared Memory
         if shm_buf is not None:
