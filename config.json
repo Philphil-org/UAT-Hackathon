@@ -4,7 +4,7 @@
     "popout_debug_window": false,
     "shoulder_guard": false,
     "typing_lockout": true,
-    "gaze_clutch": false,
-    "shush_mute": true,
+    "gaze_clutch": true,
+    "shush_mute": false,
     "stage_mode": false
 }

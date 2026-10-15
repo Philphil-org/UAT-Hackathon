@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import time
+import math
 import pyautogui
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -202,7 +203,7 @@ def draw_landmarks(frame, hand_landmarks):
         cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
 
 def is_palm_open(hand_landmarks, handedness):
-    """Check if the hand is in an open palm pose."""
+    """Check if the hand is in an open palm pose and held UPRIGHT."""
     wrist = hand_landmarks[0]
     palm_height = get_dist(wrist, hand_landmarks[9])
     
@@ -223,7 +224,16 @@ def is_palm_open(hand_landmarks, handedness):
     if get_dist(thumb_tip, index_tip) < palm_height * 0.6:
         return False
         
-    # 4. Ensure palm is facing the camera (not the back of the hand)
+    # 4. Hand Orientation: MUST be UPRIGHT (fingers pointing upward, wrist below knuckles)
+    # In screen coordinates, y increases downward: wrist must be below middle knuckle & tip
+    if wrist.y <= hand_landmarks[9].y or wrist.y <= hand_landmarks[12].y:
+        return False
+    dx_knuckle = hand_landmarks[9].x - wrist.x
+    dy_knuckle = wrist.y - hand_landmarks[9].y
+    if dy_knuckle <= 0 or abs(dx_knuckle) > dy_knuckle * 1.15: # Within ~49 deg of vertical
+        return False
+
+    # 5. Ensure palm is facing the camera (not the back of the hand)
     # Due to the mirrored camera, MediaPipe's "Left" is the physical Right hand
     if handedness == "Left":
         if thumb_tip.x > pinky_tip.x:
@@ -235,7 +245,7 @@ def is_palm_open(hand_landmarks, handedness):
     return True
 
 def is_back_of_hand_open(hand_landmarks, handedness):
-    """Check if the hand is in an open pose with the BACK OF THE HAND facing the camera."""
+    """Check if the hand is in an open pose with the BACK OF THE HAND facing the camera and UPRIGHT."""
     wrist = hand_landmarks[0]
     palm_height = get_dist3d(wrist, hand_landmarks[9])
     
@@ -251,7 +261,30 @@ def is_back_of_hand_open(hand_landmarks, handedness):
     if get_dist3d(index_tip, pinky_tip) < palm_height * 0.35:
         return False
         
-    # 3. Ensure BACK of the hand is facing the camera
+    # 3. Hand Orientation: MUST be UPRIGHT (fingers pointing upward, wrist below knuckles)
+    # In screen coordinates, y increases downward. Wrist must be below knuckle 9 and tip 12
+    if wrist.y <= hand_landmarks[9].y or wrist.y <= hand_landmarks[12].y:
+        return False
+        
+    # All 4 main fingertips must be positioned higher than their respective knuckles
+    for tip, mcp in [(8, 5), (12, 9), (16, 13), (20, 17)]:
+        if hand_landmarks[tip].y >= hand_landmarks[mcp].y:
+            return False
+            
+    # Vector from wrist to middle knuckle must be oriented predominantly upward
+    # (within ~46 degrees of vertical; rejects horizontal/tilted hands resting on cheek/chin)
+    dx_knuckle = hand_landmarks[9].x - wrist.x
+    dy_knuckle = wrist.y - hand_landmarks[9].y
+    if dy_knuckle <= 0 or abs(dx_knuckle) > dy_knuckle * 1.05: # ~46.4°
+        return False
+
+    # Vector from wrist to middle fingertip must also be predominantly upward
+    dx_tip = hand_landmarks[12].x - wrist.x
+    dy_tip = wrist.y - hand_landmarks[12].y
+    if dy_tip <= 0 or abs(dx_tip) > dy_tip * 1.10: # ~47.7°
+        return False
+
+    # 4. Ensure BACK of the hand is facing the camera
     # Due to mirrored camera: Left (physical Right) has thumb_tip.x > pinky_tip.x for back of hand
     thumb_tip = hand_landmarks[4]
     if handedness == "Left":
@@ -903,8 +936,20 @@ def main():
                             shush_active = False
     
                         # --- Back-of-Hand Swipe (Next/Prev Track) ---
-                        # Open hand with the BACK of the hand facing the camera, swiped Left/Right
-                        if is_back_of_hand_open(primary_landmarks, primary_handedness) and not gestures_paused:
+                        # Check if hand is resting on/near the face (resting chin, cheek, or head)
+                        hand_near_face = False
+                        if primary_face_center is not None and max_face_area > 0:
+                            face_w = max_face_area**0.5
+                            hand_ref_px = (int(primary_landmarks[9].x * w), int(primary_landmarks[9].y * h))
+                            dist_hand_face = ((hand_ref_px[0] - primary_face_center[0])**2 + (hand_ref_px[1] - primary_face_center[1])**2)**0.5
+                            if dist_hand_face < face_w * 0.65:
+                                hand_near_face = True
+                                back_swipe_anchor_x = None
+                                back_swipe_anchor_y = None
+                                swipe_grace_frames = 0
+
+                        # Open hand with the BACK of the hand facing the camera and held UPRIGHT, swiped Left/Right
+                        if is_back_of_hand_open(primary_landmarks, primary_handedness) and not gestures_paused and not hand_near_face:
                             swipe_grace_frames = 0
                             # Use Landmark 9 (Middle MCP / palm center) so wrist flexing/tilting doesn't skew motion
                             hand_ref = primary_landmarks[9]
