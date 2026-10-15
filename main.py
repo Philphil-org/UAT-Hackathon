@@ -936,20 +936,8 @@ def main():
                             shush_active = False
     
                         # --- Back-of-Hand Swipe (Next/Prev Track) ---
-                        # Check if hand is resting on/near the face (resting chin, cheek, or head)
-                        hand_near_face = False
-                        if primary_face_center is not None and max_face_area > 0:
-                            face_w = max_face_area**0.5
-                            hand_ref_px = (int(primary_landmarks[9].x * w), int(primary_landmarks[9].y * h))
-                            dist_hand_face = ((hand_ref_px[0] - primary_face_center[0])**2 + (hand_ref_px[1] - primary_face_center[1])**2)**0.5
-                            if dist_hand_face < face_w * 0.65:
-                                hand_near_face = True
-                                back_swipe_anchor_x = None
-                                back_swipe_anchor_y = None
-                                swipe_grace_frames = 0
-
                         # Open hand with the BACK of the hand facing the camera and held UPRIGHT, swiped Left/Right
-                        if is_back_of_hand_open(primary_landmarks, primary_handedness) and not gestures_paused and not hand_near_face:
+                        if is_back_of_hand_open(primary_landmarks, primary_handedness) and not gestures_paused:
                             swipe_grace_frames = 0
                             # Use Landmark 9 (Middle MCP / palm center) so wrist flexing/tilting doesn't skew motion
                             hand_ref = primary_landmarks[9]
